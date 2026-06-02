@@ -1,10 +1,19 @@
 using Frosty.Core;
 using HarmonyLib;
+using FrostySdk.Interfaces;
+using System;
+using System.Threading;
 
 namespace Flurry.Manager
 {
     public class HarmonyPatcherManagerHack : ExecutionAction
     {
+        public override Action<ILogger, PluginManagerType, CancellationToken> PreLaunchAction =>
+            (logger, type, cancelToken) => { };
+
+        public override Action<ILogger, PluginManagerType, CancellationToken> PostLaunchAction =>
+            (logger, type, cancelToken) => { };
+
         public HarmonyPatcherManagerHack()
         {
             FlurryManagerConfig config = new FlurryManagerConfig();
