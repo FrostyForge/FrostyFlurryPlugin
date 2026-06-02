@@ -730,7 +730,7 @@ namespace Flurry.Editor.Patches
                 return;
             }
 
-            if (!selectedAsset.Type.Contains("Texture"))
+            if (!IsTextureAsset(selectedAsset))
             {
                 App.Logger?.Log($"[Flurry] Selected asset is not a texture: {selectedAsset.Type}");
                 return;
@@ -747,6 +747,7 @@ namespace Flurry.Editor.Patches
                     ClassGuid = guid.ExportedGuid
                 };
 
+                AddDependentObject(editor, selectedAsset.Guid);
                 tex.Param.Value = new PointerRef(reference);
                 MarkModified(editor);
                 PopulateAllMaterials(editor);
@@ -777,6 +778,7 @@ namespace Flurry.Editor.Patches
                     ClassGuid = guid.ExportedGuid
                 };
 
+                AddDependentObject(editor, selectedAsset.Guid);
                 vec.Param.Value = new PointerRef(reference);
                 MarkModified(editor);
                 PopulateAllMaterials(editor);
@@ -800,6 +802,35 @@ namespace Flurry.Editor.Patches
             {
                 App.Logger?.Log($"[Flurry] Failed to mark modified: {ex.Message}");
             }
+        }
+
+        private static void AddDependentObject(FrostyMeshSetEditor editor, Guid guid)
+        {
+            try
+            {
+                Traverse.Create(editor).Method("AddDependentObject", guid).GetValue();
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Log($"[Flurry] Failed to add dependent object {guid}: {ex.Message}");
+            }
+        }
+
+        private static bool IsTextureAsset(EbxAssetEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Type))
+                return false;
+
+            try
+            {
+                if (FrostySdk.TypeLibrary.IsSubClassOf(entry.Type, "TextureBaseAsset"))
+                    return true;
+            }
+            catch
+            {
+            }
+
+            return entry.Type.IndexOf("Texture", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static SolidColorBrush Brush(string key)

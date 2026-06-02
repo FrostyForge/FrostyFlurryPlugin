@@ -145,20 +145,9 @@ namespace Flurry.Editor.Patches
 
         private static bool IsFacePoserAssetGuid(FrostyPropertyGridItemData item)
         {
-            if (item.Name != "AssetGuid")
-                return false;
-
             var parent = item.Parent;
-            if (parent == null)
-                return false;
-
-            if (parent.Name == "FacePoserLibrary")
-                return true;
-
-            if (parent.Parent != null && parent.Parent.Name == "FacePoserLibrary")
-                return true;
-
-            return false;
+            return item.Name == "AssetGuid"
+                && (parent?.Name == "FacePoserLibrary" || parent?.Parent?.Name == "FacePoserLibrary");
         }
 
         private static TextBlock AddFriendlyNameOverlay(FrostyPropertyGridItem gridItem, FrostyPropertyGridItemData item)
@@ -231,26 +220,7 @@ namespace Flurry.Editor.Patches
                 {
                     Header = $"{name}  ({guid})"
                 };
-                mi.Click += (s, e) =>
-                {
-                    try
-                    {
-                        if (Guid.TryParse(guid, out Guid parsedGuid))
-                        {
-                            item.Value = parsedGuid;
-
-                            if (friendlyLabel != null)
-                            {
-                                string newName = FacePoserMappings.Resolve(parsedGuid.ToString());
-                                UpdateFriendlyLabel(friendlyLabel, newName);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        App.Logger?.Log($"[Flurry] Failed to set FacePoser GUID: {ex.Message}");
-                    }
-                };
+                mi.Click += (s, e) => SetFacePoserValue(item, guid, friendlyLabel);
                 selectMenu.Items.Add(mi);
             }
 
@@ -286,6 +256,23 @@ namespace Flurry.Editor.Patches
                 }
             };
             cm.Items.Add(openFileItem);
+        }
+
+        private static void SetFacePoserValue(FrostyPropertyGridItemData item, string guid, TextBlock friendlyLabel)
+        {
+            try
+            {
+                if (!Guid.TryParse(guid, out Guid parsedGuid))
+                    return;
+
+                item.Value = parsedGuid;
+                if (friendlyLabel != null)
+                    UpdateFriendlyLabel(friendlyLabel, FacePoserMappings.Resolve(parsedGuid.ToString()));
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Log($"[Flurry] Failed to set FacePoser GUID: {ex.Message}");
+            }
         }
     }
 }

@@ -120,21 +120,6 @@ namespace Flurry.Editor.Patches
     [HarmonyPatchCategory("flurry.editor")]
     public class WeaponPropertyGridItemPatch
     {
-        private static readonly HashSet<string> WeaponMeshFieldNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Mesh", "MeshZoom", "Mesh3p", "Mesh3pZoom",
-            "Used1p", "Used1pZoom", "Used3p", "Used3pZoom",
-            "WeaponMesh1p", "WeaponMesh3p", "WeaponMesh"
-        };
-
-        private static readonly HashSet<string> WeaponParentTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "WeaponStateData1p", "WeaponStateData3p", "WeaponMeshData1p", "WeaponMeshData3p",
-            "WeaponMesh1p", "WeaponMesh3p", "WeaponMesh", "WeaponMeshData",
-            "WeaponMesh1pData", "WeaponMesh3pData",
-            "WeaponMesh1pDataContainer", "WeaponMesh3pDataContainer"
-        };
-
         [HarmonyPatch(nameof(FrostyPropertyGridItem.OnApplyTemplate))]
         [HarmonyPostfix]
         public static void OnApplyTemplate_Postfix(FrostyPropertyGridItem __instance)
@@ -373,16 +358,12 @@ namespace Flurry.Editor.Patches
         {
             try
             {
-                if (Guid.TryParse(guid, out Guid parsedGuid))
-                {
-                    item.Value = parsedGuid;
+                if (!Guid.TryParse(guid, out Guid parsedGuid))
+                    return;
 
-                    if (friendlyLabel != null)
-                    {
-                        string newName = WeaponMappings.Resolve(parsedGuid.ToString());
-                        UpdateFriendlyLabel(friendlyLabel, newName);
-                    }
-                }
+                item.Value = parsedGuid;
+                if (friendlyLabel != null)
+                    UpdateFriendlyLabel(friendlyLabel, WeaponMappings.Resolve(parsedGuid.ToString()));
             }
             catch (Exception ex)
             {
@@ -390,18 +371,5 @@ namespace Flurry.Editor.Patches
             }
         }
 
-        private static T FindChild<T>(DependencyObject parent) where T : DependencyObject
-        {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T result)
-                    return result;
-                var found = FindChild<T>(child);
-                if (found != null)
-                    return found;
-            }
-            return null;
-        }
     }
 }

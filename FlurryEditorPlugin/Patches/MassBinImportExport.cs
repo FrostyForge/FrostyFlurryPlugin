@@ -126,21 +126,6 @@ namespace Flurry.Editor
             App.Logger.Log(
                 $"Mass Bin Export complete: EBX {exported} exported, RES {exportedRes} exported, Chunks {exportedChunks} exported, skipped {skipped + skippedRes + skippedChunks}.");
         });
-        
-        private static string MakeSafeFileName(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return "chunk";
-
-            char[] invalid = Path.GetInvalidFileNameChars();
-            char[] chars = value.ToCharArray();
-            for (int i = 0; i < chars.Length; i++)
-            {
-                if (invalid.Contains(chars[i]))
-                    chars[i] = '_';
-            }
-            return new string(chars);
-        }
     }
 
     public class MassBinImportMenuExt : MenuExtension
@@ -414,21 +399,6 @@ namespace Flurry.Editor
             }
 
             return false;
-        }
-
-        private static string MakeSafeFileName(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return "chunk";
-
-            char[] invalid = Path.GetInvalidFileNameChars();
-            char[] chars = value.ToCharArray();
-            for (int i = 0; i < chars.Length; i++)
-            {
-                if (invalid.Contains(chars[i]))
-                    chars[i] = '_';
-            }
-            return new string(chars);
         }
 
         private static void MarkLinkedAssetsDirty(AssetEntry entry)

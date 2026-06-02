@@ -30,15 +30,6 @@ namespace Flurry.Editor.Patches
     [HarmonyPatchCategory("flurry.editor")]
     public class BatchDuplicatePatch
     {
-        private static bool IsDeveloperFeaturesEnabled()
-        {
-#if DEV_FEATURES
-            return true;
-#else
-            return false;
-#endif
-        }
-
         [HarmonyPatch("OnApplyTemplate")]
         [HarmonyPostfix]
         public static void AddBatchDuplicateMenuItem(FrostyDataExplorer __instance)
@@ -52,86 +43,37 @@ namespace Flurry.Editor.Patches
 
             cm.Opened += (s, e) =>
             {
-                MenuItem batchDupeItem = null;
-                foreach (var item in cm.Items)
-                {
-                    if (item is MenuItem mi && mi.Header?.ToString() == "Batch Duplicate")
-                    {
-                        batchDupeItem = mi;
-                        break;
-                    }
-                }
-
-                if (batchDupeItem == null)
-                {
-                    ImageSourceConverter converter = new ImageSourceConverter();
-                    batchDupeItem = new MenuItem()
-                    {
-                        Header = "Batch Duplicate",
-                        Icon = new Image()
-                        {
-                            Source = converter.ConvertFromString("pack://application:,,,/FrostyEditor;component/Images/Add.png") as ImageSource,
-                            Opacity = 0.5
-                        }
-                    };
-                    batchDupeItem.Click += BatchDuplicate_Click;
-                    cm.Items.Add(batchDupeItem);
-                }
-
                 IList<AssetEntry> selectedAssets = __instance.SelectedAssets;
                 List<EbxAssetEntry> selectedEbxAssets = GetSelectedEbxAssets(__instance);
                 int selectedEbxCount = selectedEbxAssets.Count;
 
+                MenuItem batchDupeItem = GetOrAddMenuItem(cm, "Batch Duplicate", BatchDuplicate_Click, "pack://application:,,,/FrostyEditor;component/Images/Add.png");
                 batchDupeItem.Visibility = (selectedAssets != null && selectedAssets.Count > 1)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
 
-                if (IsDeveloperFeaturesEnabled())
-                {
-                    MenuItem renameAssetItem = null;
-                    foreach (var item in cm.Items)
-                    {
-                        if (item is MenuItem mi && mi.Header?.ToString() == "Rename Asset (Developer)")
-                        {
-                            renameAssetItem = mi;
-                            break;
-                        }
-                    }
-
-                    if (renameAssetItem == null)
-                    {
-                        renameAssetItem = new MenuItem()
-                        {
-                            Header = "Rename Asset (Developer)"
-                        };
-                        renameAssetItem.Click += RenameAsset_Click;
-                        cm.Items.Add(renameAssetItem);
-                    }
-
-                    MenuItem moveSelectedItem = null;
-                    foreach (var item in cm.Items)
-                    {
-                        if (item is MenuItem mi && mi.Header?.ToString() == "Move Selected (Developer)")
-                        {
-                            moveSelectedItem = mi;
-                            break;
-                        }
-                    }
-
-                    if (moveSelectedItem == null)
-                    {
-                        moveSelectedItem = new MenuItem()
-                        {
-                            Header = "Move Selected (Developer)"
-                        };
-                        moveSelectedItem.Click += MoveSelected_Click;
-                        cm.Items.Add(moveSelectedItem);
-                    }
-
-                    renameAssetItem.Visibility = selectedEbxCount == 1 ? Visibility.Visible : Visibility.Collapsed;
-                    moveSelectedItem.Visibility = selectedEbxCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-                }
+                MenuItem renameAssetItem = GetOrAddMenuItem(cm, "Rename Asset", RenameAsset_Click);
+                MenuItem moveSelectedItem = GetOrAddMenuItem(cm, "Move Selected", MoveSelected_Click);
+                renameAssetItem.Visibility = selectedEbxCount == 1 ? Visibility.Visible : Visibility.Collapsed;
+                moveSelectedItem.Visibility = selectedEbxCount > 0 ? Visibility.Visible : Visibility.Collapsed;
             };
+        }
+
+        private static MenuItem GetOrAddMenuItem(ContextMenu menu, string header, RoutedEventHandler click, string iconPath = null)
+        {
+            foreach (var item in menu.Items)
+                if (item is MenuItem mi && mi.Header?.ToString() == header)
+                    return mi;
+
+            MenuItem menuItem = new MenuItem { Header = header };
+            if (iconPath != null)
+            {
+                ImageSource source = new ImageSourceConverter().ConvertFromString(iconPath) as ImageSource;
+                menuItem.Icon = new Image { Source = source, Opacity = 0.5 };
+            }
+            menuItem.Click += click;
+            menu.Items.Add(menuItem);
+            return menuItem;
         }
 
         private static void BatchDuplicate_Click(object sender, RoutedEventArgs e)
@@ -251,9 +193,6 @@ namespace Flurry.Editor.Patches
 
         private static void RenameAsset_Click(object sender, RoutedEventArgs e)
         {
-            if (!IsDeveloperFeaturesEnabled())
-                return;
-
             EbxAssetEntry entry = GetSelectedEbxAssets(App.EditorWindow?.DataExplorer).FirstOrDefault();
             if (entry == null)
                 return;
@@ -306,9 +245,6 @@ namespace Flurry.Editor.Patches
 
         private static void MoveSelected_Click(object sender, RoutedEventArgs e)
         {
-            if (!IsDeveloperFeaturesEnabled())
-                return;
-
             List<EbxAssetEntry> entries = GetSelectedEbxAssets(App.EditorWindow?.DataExplorer);
             if (entries == null || entries.Count == 0)
                 return;
