@@ -1,0 +1,10 @@
+<Project>
+  <Import Project="Directory.Build.user.props" Condition="Exists('Directory.Build.user.props')" />
+  <PropertyGroup>
+    <!-- Do not change these paths! Change Directory.Build.user.props instead. -->
+    <FrostyEditorInstallationPath Condition="'$(FrostyEditorInstallationPath)' == ''">
+      C:\ConfigureMe\Path\To\FrostyEditor</FrostyEditorInstallationPath>
+    <FrostyModManagerInstallationPath Condition="'$(FrostyModManagerInstallationPath)' == ''">
+      C:\ConfigureMe\Path\To\FrostyModManager</FrostyModManagerInstallationPath>
+  </PropertyGroup>
+</Project>

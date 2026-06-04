@@ -7,11 +7,12 @@ using ReferencesPlugin;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.ComponentModel;
+using System.Windows.Data;
 using System.Windows.Media;
 
 namespace Flurry.Editor.Patches
@@ -24,6 +25,9 @@ namespace Flurry.Editor.Patches
         private static AccessTools.FieldRef<ReferenceTabItem, MenuItem> explorerFromFindItem_ref = AccessTools.FieldRefAccess<ReferenceTabItem, MenuItem>("refExplorerFromFindItem");
         private static AccessTools.FieldRef<ReferenceTabItem, FrostyAssetListView> refToList_ref = AccessTools.FieldRefAccess<ReferenceTabItem, FrostyAssetListView>("refExplorerToList");
         private static AccessTools.FieldRef<ReferenceTabItem, FrostyAssetListView> refFromList_ref = AccessTools.FieldRefAccess<ReferenceTabItem, FrostyAssetListView>("refExplorerFromList");
+
+        private static CheckBox hideMvdbCheckBox;
+        private static CheckBox hideNetRegCheckBox;
 
         [HarmonyPatch("RefreshReferences")]
         [HarmonyPostfix]
@@ -40,6 +44,35 @@ namespace Flurry.Editor.Patches
             FrostyAssetListView refExplorerToList = refToList_ref(__instance);
             FrostyAssetListView refExplorerFromList = refFromList_ref(__instance);
 
+            // Apply MVDB/NetReg filter based on UI checkboxes
+            bool hideMvdb = hideMvdbCheckBox?.IsChecked == true;
+            bool hideNetReg = hideNetRegCheckBox?.IsChecked == true;
+
+            if (refExplorerToList.ItemsSource != null)
+            {
+                ICollectionView view = CollectionViewSource.GetDefaultView(refExplorerToList.ItemsSource);
+                if (view != null)
+                {
+                    if (hideMvdb || hideNetReg)
+                    {
+                        view.Filter = obj =>
+                        {
+                            if (obj is EbxAssetEntry entry)
+                            {
+                                if (hideMvdb && entry.Type == "MeshVariationDatabase")
+                                    return false;
+                                if (hideNetReg && entry.Type == "NetworkRegistryAsset")
+                                    return false;
+                            }
+                            return true;
+                        };
+                    }
+                    else
+                    {
+                        view.Filter = null;
+                    }
+                }
+            }
 
             foreach (var item in App.EditorWindow.MiscTabControl.Items)
             {
@@ -53,7 +86,17 @@ namespace Flurry.Editor.Patches
                             tab.Header = "References (0 & 0)";
                             return;
                         }
-                        tab.Header = $"References ({Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerToList.ItemsSource)} & {Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerFromList.ItemsSource)})";
+
+                        // Count visible items (respecting filter)
+                        int toCount;
+                        ICollectionView toView = CollectionViewSource.GetDefaultView(refExplorerToList.ItemsSource);
+                        if (toView != null && toView.Filter != null)
+                            toCount = toView.Cast<object>().Count();
+                        else
+                            toCount = Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerToList.ItemsSource);
+
+                        int fromCount = Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerFromList.ItemsSource);
+                        tab.Header = $"References ({toCount} & {fromCount})";
                     }
                 }
             }
@@ -76,6 +119,114 @@ namespace Flurry.Editor.Patches
             MenuItem refExploreFromFindItem = explorerFromFindItem_ref(__instance);
             FrostyAssetListView refExplorerToList = refToList_ref(__instance);
             FrostyAssetListView refExplorerFromList = refFromList_ref(__instance);
+
+            // Inject filter checkboxes into the references tab grid
+            Grid parentGrid = VisualTreeHelper.GetParent(refExplorerToList) as Grid;
+            if (parentGrid != null && hideMvdbCheckBox == null)
+            {
+                Brush fgBrush = Application.Current?.Resources.Contains("FontColor") == true
+                    ? Application.Current.Resources["FontColor"] as Brush
+                    : new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+
+                // Add a new row for filter checkboxes
+                parentGrid.RowDefinitions.Insert(1, new RowDefinition { Height = GridLength.Auto });
+
+                // Shift existing row 1+ children down by one
+                foreach (UIElement child in parentGrid.Children)
+                {
+                    int row = Grid.GetRow(child);
+                    if (row >= 1)
+                        Grid.SetRow(child, row + 1);
+                }
+
+                var filterPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(4, 2, 4, 2)
+                };
+                Grid.SetRow(filterPanel, 1);
+                Grid.SetColumn(filterPanel, 0);
+
+                hideMvdbCheckBox = new CheckBox
+                {
+                    Content = "Hide MVDBs",
+                    Foreground = fgBrush,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 12, 0),
+                    IsChecked = false
+                };
+
+                hideNetRegCheckBox = new CheckBox
+                {
+                    Content = "Hide NetRegs",
+                    Foreground = fgBrush,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    IsChecked = false
+                };
+
+                // When toggled, refresh the filter on the current list
+                EventHandler refreshFilter = (s, e) =>
+                {
+                    if (refExplorerToList.ItemsSource == null)
+                        return;
+
+                    bool hideMvdb = hideMvdbCheckBox.IsChecked == true;
+                    bool hideNetReg = hideNetRegCheckBox.IsChecked == true;
+
+                    ICollectionView view = CollectionViewSource.GetDefaultView(refExplorerToList.ItemsSource);
+                    if (view != null)
+                    {
+                        if (hideMvdb || hideNetReg)
+                        {
+                            view.Filter = obj =>
+                            {
+                                if (obj is EbxAssetEntry entry)
+                                {
+                                    if (hideMvdb && entry.Type == "MeshVariationDatabase")
+                                        return false;
+                                    if (hideNetReg && entry.Type == "NetworkRegistryAsset")
+                                        return false;
+                                }
+                                return true;
+                            };
+                        }
+                        else
+                        {
+                            view.Filter = null;
+                        }
+                        view.Refresh();
+                    }
+
+                    // Update tab header count
+                    foreach (var item in App.EditorWindow.MiscTabControl.Items)
+                    {
+                        if (item is FrostyTabItem tab && tab.Header.ToString().Contains("References"))
+                        {
+                            int toCount;
+                            ICollectionView toView = CollectionViewSource.GetDefaultView(refExplorerToList.ItemsSource);
+                            if (toView?.Filter != null)
+                                toCount = toView.Cast<object>().Count();
+                            else
+                                toCount = Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerToList.ItemsSource);
+
+                            int fromCount = refExplorerFromList.ItemsSource != null
+                                ? Enumerable.Count((IEnumerable<EbxAssetEntry>)refExplorerFromList.ItemsSource)
+                                : 0;
+                            tab.Header = $"References ({toCount} & {fromCount})";
+                            break;
+                        }
+                    }
+                };
+
+                hideMvdbCheckBox.Checked += (s, e) => refreshFilter(s, e);
+                hideMvdbCheckBox.Unchecked += (s, e) => refreshFilter(s, e);
+                hideNetRegCheckBox.Checked += (s, e) => refreshFilter(s, e);
+                hideNetRegCheckBox.Unchecked += (s, e) => refreshFilter(s, e);
+
+                filterPanel.Children.Add(hideMvdbCheckBox);
+                filterPanel.Children.Add(hideNetRegCheckBox);
+                parentGrid.Children.Add(filterPanel);
+            }
 
             ContextMenu cmTo = refExplorerToFindItem.Parent as ContextMenu;
             ContextMenu cmFrom = refExploreFromFindItem.Parent as ContextMenu;
