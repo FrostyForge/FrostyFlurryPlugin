@@ -1,3 +1,4 @@
+<!-- RENAME THIS FILE TO `Directory.Build.user.props` -->
 <Project>
   <PropertyGroup>
     <!-- Change this to the path of your Frosty Editor installation on your system. -->
