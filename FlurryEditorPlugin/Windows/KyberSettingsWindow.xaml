@@ -20,7 +20,7 @@
                 <Grid Margin="5" DockPanel.Dock="Top">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Image Source="../Images/KyberCog.png"
-							RenderOptions.BitmapScalingMode="Fant"
+                            RenderOptions.BitmapScalingMode="Fant"
                             Width="28" />
                         <Label Content="Kyber Launcher Options" FontFamily="Global User Interface" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="14"/>
                     </StackPanel>
@@ -36,16 +36,29 @@
                         </DockPanel>
                         <DockPanel LastChildFill="True">
                             <Label Content="Load Order " FontFamily="Global User Interface" Width="125"/>
-							<Button Click="EditLoadOrder_click">
-								<Image Source="../Images/Pencil.png"
-									   RenderOptions.BitmapScalingMode="Fant"
+                            <Button Click="EditLoadOrder_click">
+                                <Image Source="../Images/Pencil.png"
+                                       RenderOptions.BitmapScalingMode="Fant"
                                        Width="14"/>
-							</Button>
+                            </Button>
                             <ComboBox x:Name="loadOrderComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1"/>
                         </DockPanel>
                         <DockPanel LastChildFill="True">
-                            <Label Content="DebugMode " FontFamily="Global User Interface" Width="125"/>
-                            <ComboBox x:Name="debugModeComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1"/>
+                            <Label Content="KYBER Arguments " FontFamily="Global User Interface" Width="125"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="0.5*"/>
+                                    <ColumnDefinition Width="0.5*"/>
+                                </Grid.ColumnDefinitions>
+                                <DockPanel Grid.Column="0" LastChildFill="True">
+                                    <Label Content="DebugMode " FontFamily="Global User Interface" Width="125"/>
+                                    <ComboBox x:Name="debugModeComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1"/>
+                                </DockPanel>
+                                <DockPanel Grid.Column="1" LastChildFill="True">
+                                    <Label Content="Module Branch " FontFamily="Global User Interface" Width="125"/>
+                                    <TextBox x:Name="moduleBranchTextInput" VerticalContentAlignment="Center" Text="stable" Margin="1" BorderThickness="1" Width="125"/>
+                                </DockPanel>
+                            </Grid>
                         </DockPanel>
                         <DockPanel LastChildFill="True" Margin="15">
                         </DockPanel>

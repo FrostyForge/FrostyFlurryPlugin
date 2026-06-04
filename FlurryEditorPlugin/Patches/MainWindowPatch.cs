@@ -322,7 +322,7 @@ namespace Flurry.Editor.Patches
                 //  Execute kyber_cli.exe
                 //
                 int randomNumber = random.Next();
-                string cliCommand = (KyberSettings.FrontendLaunch ? "start_game" : "start_server") + $" --module-branch=main --raw-mods \"{$@"{basePath}/Kyber-Launch.json"}\"" + (KyberSettings.DebugMode ? " --verbose --debug" : "");
+                string cliCommand = (KyberSettings.FrontendLaunch ? "start_game" : "start_server") + $" --module-branch={KyberSettings.ModuleBranch} --raw-mods \"{$@"{basePath}/Kyber-Launch.json"}\"" + (KyberSettings.DebugMode ? " --verbose --debug" : "");
                 if (!KyberSettings.FrontendLaunch)
                     cliCommand += $" --server-password \"FlurryPlugin{randomNumber}\" --no-dedicated --server-name \"Test\" --map \"{KyberSettings.Level}\" --mode \"{KyberSettings.GameMode}\" --startup-commands \"{$@"{basePath}/Kyber-Commands.txt"}\"";
                 App.Logger.Log(cliCommand);

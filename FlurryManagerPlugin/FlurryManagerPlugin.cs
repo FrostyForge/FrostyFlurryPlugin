@@ -1,4 +1,5 @@
 using Frosty.Core;
+using FrostySdk.Interfaces;
 using HarmonyLib;
 using FrostySdk.Interfaces;
 using System;
@@ -8,11 +9,14 @@ namespace Flurry.Manager
 {
     public class HarmonyPatcherManagerHack : ExecutionAction
     {
+        // ExecutionAction.PreLaunchAction and PostLaunchAction are virtual properties
+        // that return Action delegates. The base class returns null by default, and
+        // FrostyModManager invokes them directly without null-checking, so we must
+        // override both with no-op actions to prevent NullReferenceException on launch.
         public override Action<ILogger, PluginManagerType, CancellationToken> PreLaunchAction =>
-            (logger, type, cancelToken) => { };
-
+            (logger, type, token) => { };
         public override Action<ILogger, PluginManagerType, CancellationToken> PostLaunchAction =>
-            (logger, type, cancelToken) => { };
+            (logger, type, token) => { };
 
         public HarmonyPatcherManagerHack()
         {
