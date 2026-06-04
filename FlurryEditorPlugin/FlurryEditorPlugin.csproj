@@ -66,31 +66,31 @@
 
   <ItemGroup>
     <Reference Include="FrostyControls">
-      <HintPath>E:\Modding\FrostyEditor\FrostyControls.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyControls.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FrostyHash">
-      <HintPath>E:\Modding\FrostyEditor\FrostyHash.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyHash.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FrostyCore">
-      <HintPath>E:\Modding\FrostyEditor\FrostyCore.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyCore.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FrostySdk">
-      <HintPath>E:\Modding\FrostyEditor\FrostySdk.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\FrostySdk.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FrostyEditor">
-      <HintPath>E:\Modding\FrostyEditor\FrostyEditor.exe</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyEditor.exe</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="ReferencesPlugin">
-      <HintPath>E:\Modding\FrostyEditor\Plugins\ReferencesPlugin.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\ReferencesPlugin.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="BundleEditorPlugin">
-      <HintPath>E:\Modding\FrostyEditor\Plugins\BundleEditorPlugin.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\BundleEditorPlugin.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
@@ -102,22 +102,22 @@
 
   <ItemGroup>
     <Reference Include="MeshSetPlugin">
-      <HintPath>E:\Modding\FrostyEditor\Plugins\MeshSetPlugin.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\MeshSetPlugin.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="ChunkResEditorPlugin">
-      <HintPath>E:\Modding\FrostyEditor\Plugins\ChunkResEditorPlugin.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\ChunkResEditorPlugin.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="DuplicationPlugin">
-      <HintPath>E:\Modding\FrostyEditor\Plugins\DuplicationPlugin.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\DuplicationPlugin.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
       <HintPath>ThirdParty\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>E:\Modding\FrostyEditor\ThirdParty\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\ThirdParty\Newtonsoft.Json.dll</HintPath>
     </Reference>
   </ItemGroup>
 

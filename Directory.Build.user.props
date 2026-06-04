@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Change this to the path of your Frosty Editor installation on your system. -->
+    <FrostyEditorInstallationPath>D:\Frosty\FrostyEditor_1063_Clean</FrostyEditorInstallationPath>
+    <!-- Change this to the path of your Frosty Mod Manager installation on your system. -->
+    <FrostyModManagerInstallationPath>D:\Frosty\FrostyModManager_1063_Clean</FrostyModManagerInstallationPath>
+  </PropertyGroup>
+</Project>

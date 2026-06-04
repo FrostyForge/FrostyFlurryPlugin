@@ -1,51 +1,51 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
-  <PropertyGroup>
-    <Configurations>Developer - Debug;Release - Alpha;Release - Beta;Release - Final</Configurations>
-    <Platforms>x64</Platforms>
-    <TargetFramework>net48</TargetFramework>
-    <AssemblyTitle>FlurryManagerPlugin</AssemblyTitle>
-    <Product>FlurryManagerPlugin</Product>
-	<RootNamespace>Flurry.Manager</RootNamespace>
-    <Copyright>Copyright © 2025</Copyright>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <UseWPF>true</UseWPF>
-    <OutputType>Library</OutputType>
-	<WeaverConfiguration>
-		<Weavers>
-			<Costura>
-				<!-- Only embed these runtime assemblies -->
-				<IncludeAssemblies>
-					0Harmony
-				</IncludeAssemblies>
-			</Costura>
-		</Weavers>
-	</WeaverConfiguration>
-  </PropertyGroup>
+	<PropertyGroup>
+		<Configurations>Developer - Debug;Release - Alpha;Release - Beta;Release - Final</Configurations>
+		<Platforms>x64</Platforms>
+		<TargetFramework>net48</TargetFramework>
+		<AssemblyTitle>FlurryManagerPlugin</AssemblyTitle>
+		<Product>FlurryManagerPlugin</Product>
+		<RootNamespace>Flurry.Manager</RootNamespace>
+		<Copyright>Copyright © 2025</Copyright>
+		<CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<UseWPF>true</UseWPF>
+		<OutputType>Library</OutputType>
+		<WeaverConfiguration>
+			<Weavers>
+				<Costura>
+					<!-- Only embed these runtime assemblies -->
+					<IncludeAssemblies>
+						0Harmony
+					</IncludeAssemblies>
+				</Costura>
+			</Weavers>
+		</WeaverConfiguration>
+	</PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Developer - Debug|x64' ">
-    <DebugSymbols>true</DebugSymbols>
-    <OutputPath>bin\Developer\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-  </PropertyGroup>
+	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Developer - Debug|x64' ">
+		<DebugSymbols>true</DebugSymbols>
+		<OutputPath>bin\Developer\Debug\</OutputPath>
+		<DefineConstants>DEBUG;TRACE</DefineConstants>
+	</PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release - Alpha|x64' ">
-    <OutputPath>bin\Release\Alpha\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
+	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release - Alpha|x64' ">
+		<OutputPath>bin\Release\Alpha\</OutputPath>
+		<DefineConstants>TRACE</DefineConstants>
+		<Optimize>true</Optimize>
+	</PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release - Beta|x64'">
-    <OutputPath>bin\Release\Beta\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release - Beta|x64'">
+		<OutputPath>bin\Release\Beta\</OutputPath>
+		<DefineConstants>TRACE</DefineConstants>
+		<Optimize>true</Optimize>
+	</PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release - Final|x64'">
-    <OutputPath>bin\Release\Final\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release - Final|x64'">
+		<OutputPath>bin\Release\Final\</OutputPath>
+		<DefineConstants>TRACE</DefineConstants>
+		<Optimize>true</Optimize>
+	</PropertyGroup>
 	<ItemGroup>
 		<Resource Include="Images\InvertSelect.png" />
 		<Resource Include="Images\CircleCheck.png" />
@@ -62,73 +62,41 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Reference Include="FrostyControls">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyControls.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyCore">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyCore.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyEditor">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyEditor.exe</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyHash">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyHash.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyModManager">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyModManager.exe</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyModSupport">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyModSupport.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostySdk">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostySdk.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="Microsoft.CSharp">
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="Newtonsoft.Json">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\ThirdParty\Newtonsoft.Json.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="SharpDX.DXGI">
-	    <HintPath>C:\Users\Clay\Downloads\FrostyToolsuite-1.0.6.3\FrostyEditor\ThirdParty\SharpDX.DXGI.dll</HintPath>
-	    <Private>false</Private>
-	  </Reference>
-	  <Reference Include="FrostyCore">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyCore.dll</HintPath>
-	  </Reference>
-	  <Reference Include="FrostyEditor">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyEditor.exe</HintPath>
-	  </Reference>
-	  <Reference Include="FrostyHash">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyHash.dll</HintPath>
-	  </Reference>
-	  <Reference Include="FrostyModManager">
-	    <HintPath>..\..\..\..\Modding\FrostyModManager\FrostyModManager.exe</HintPath>
-	  </Reference>
-	  <Reference Include="FrostyModSupport">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostyModSupport.dll</HintPath>
-	  </Reference>
-	  <Reference Include="FrostySdk">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\FrostySdk.dll</HintPath>
-	  </Reference>
-	  <Reference Include="Microsoft.CSharp" />
-	  <Reference Include="Newtonsoft.Json">
-	    <HintPath>..\..\..\..\Modding\FrostyEditor\ThirdParty\Newtonsoft.Json.dll</HintPath>
-	  </Reference>
-	  <Reference Include="SharpDX.DXGI">
-	    <HintPath>C:\Users\Clay\Downloads\FrostyToolsuite-1.0.6.3\FrostyEditor\ThirdParty\SharpDX.DXGI.dll</HintPath>
-	  </Reference>
+		<Reference Include="FrostyControls">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostyControls.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="FrostyCore">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostyCore.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="FrostyHash">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostyHash.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="FrostyModManager">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostyModManager.exe</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="FrostyModSupport">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostyModSupport.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="FrostySdk">
+			<HintPath>$(FrostyModManagerInstallationPath)\FrostySdk.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="Microsoft.CSharp">
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="Newtonsoft.Json">
+			<HintPath>$(FrostyModManagerInstallationPath)\ThirdParty\Newtonsoft.Json.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="Microsoft.CSharp" />
 	</ItemGroup>
 
-  <!--
+	<!--
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">
       <Exec Command="xcopy /Y $(TargetPath) $(SolutionDir)$(OutDir)Plugins\" />
     </Target>
