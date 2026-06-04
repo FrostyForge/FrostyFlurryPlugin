@@ -400,3 +400,4 @@ FodyWeavers.xsd
 *.sln.iml
 
 *.lscache
+Directory.Build.user.props
