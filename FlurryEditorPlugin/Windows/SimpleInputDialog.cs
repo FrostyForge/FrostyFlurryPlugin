@@ -10,10 +10,10 @@ namespace Flurry.Editor.Windows
 
         private TextBox textBox;
 
-        public SimpleInputDialog(string title, string prompt, string defaultValue = "")
+        public SimpleInputDialog(string title, string prompt, string defaultValue = "", bool multiline = false)
         {
             Title = title;
-            Width = 420;
+            Width = multiline ? 520 : 420;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             ResizeMode = ResizeMode.NoResize;
@@ -44,7 +44,11 @@ namespace Flurry.Editor.Windows
                 CaretBrush = fgBrush,
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x70, 0x70, 0x70)),
                 Padding = new Thickness(4, 3, 4, 3),
-                Margin = new Thickness(0, 0, 0, 14)
+                Margin = new Thickness(0, 0, 0, 14),
+                AcceptsReturn = multiline,
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
+                Height = multiline ? 120 : double.NaN
             };
             textBox.SelectAll();
             panel.Children.Add(textBox);
@@ -92,9 +96,9 @@ namespace Flurry.Editor.Windows
             return null;
         }
 
-        public static string Show(string title, string prompt, string defaultValue = "", Window owner = null)
+        public static string Show(string title, string prompt, string defaultValue = "", Window owner = null, bool multiline = false)
         {
-            var dialog = new SimpleInputDialog(title, prompt, defaultValue);
+            var dialog = new SimpleInputDialog(title, prompt, defaultValue, multiline);
             if (owner != null)
                 dialog.Owner = owner;
             return dialog.ShowDialog() == true ? dialog.InputText : null;

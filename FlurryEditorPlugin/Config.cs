@@ -2,6 +2,7 @@
 using Frosty.Core.Controls.Editors;
 using FrostySdk.Attributes;
 using FrostySdk.IO;
+using Flurry.Editor.Patches;
 
 namespace Flurry.Editor
 {
@@ -49,6 +50,20 @@ namespace Flurry.Editor
         [Editor(typeof(FrostyBooleanEditor))]
         [EbxFieldMeta(EbxFieldType.Boolean)]
         public bool AutosaveOnExport { get; set; } = true;
+
+        [Category("Data Explorer")]
+        [DisplayName("Enable Hidden Type Filter")]
+        [Description("Enables the Data Explorer toolbar toggle that hides configured asset types.")]
+        [Editor(typeof(FrostyBooleanEditor))]
+        [EbxFieldMeta(EbxFieldType.Boolean)]
+        public bool DataExplorerHideConfiguredTypes { get; set; } = false;
+
+        [Category("Data Explorer")]
+        [DisplayName("Hidden Asset Types")]
+        [Description("Semicolon, comma, or newline-separated asset type names hidden when the Data Explorer 'Hide types' toggle is enabled.")]
+        [Editor(typeof(FrostyStringEditor))]
+        [EbxFieldMeta(EbxFieldType.String)]
+        public string DataExplorerHiddenAssetTypes { get; set; } = DataExplorerTypeFilterPatch.DefaultHiddenTypesText;
 
         [Category("Additional Tweaks")]
         [DisplayName("Enable Blueprint Editor Tweaks")]
@@ -102,6 +117,8 @@ namespace Flurry.Editor
 
             HasAcknowledgedStartupMessage = Config.Get<bool>("Flurry.HasAcknowledgedStartupMessage", false);
             AutosaveOnExport = Config.Get<bool>("Flurry.AutosaveOnExport", true);
+            DataExplorerHideConfiguredTypes = Config.Get<bool>(DataExplorerTypeFilterPatch.HideTypesEnabledConfigKey, false);
+            DataExplorerHiddenAssetTypes = Config.Get<string>(DataExplorerTypeFilterPatch.HiddenTypesConfigKey, DataExplorerTypeFilterPatch.DefaultHiddenTypesText);
             BlueprintEditorTweaks = Config.Get<bool>("Flurry.BlueprintEditorTweaks", false);
             BookmarksTabTweaks = Config.Get<bool>("Flurry.BookmarksTabTweaks", true);
             ReferencesTabTweaks = Config.Get<bool>("Flurry.ReferencesTabTweaks", true);
@@ -117,6 +134,8 @@ namespace Flurry.Editor
             Config.Add("Flurry.LocalConfigDirectory", LocalConfigDirectory ?? string.Empty);
             Config.Add("Flurry.HasAcknowledgedStartupMessage", HasAcknowledgedStartupMessage);
             Config.Add("Flurry.AutosaveOnExport", AutosaveOnExport);
+            Config.Add(DataExplorerTypeFilterPatch.HideTypesEnabledConfigKey, DataExplorerHideConfiguredTypes);
+            Config.Add(DataExplorerTypeFilterPatch.HiddenTypesConfigKey, DataExplorerHiddenAssetTypes ?? string.Empty);
             Config.Add("Flurry.BlueprintEditorTweaks", BlueprintEditorTweaks);
             Config.Add("Flurry.BookmarksTabTweaks", BookmarksTabTweaks);
             Config.Add("Flurry.ReferencesTabTweaks", ReferencesTabTweaks);
@@ -125,6 +144,7 @@ namespace Flurry.Editor
 
             FlurryLocalConfigRedirect.SaveState(UseLocalConfigDirectory, LocalConfigDirectory);
             Config.Save();
+            DataExplorerTypeFilterPatch.RefreshOpenExplorersFromConfig();
         }
 
         public override bool Validate()
