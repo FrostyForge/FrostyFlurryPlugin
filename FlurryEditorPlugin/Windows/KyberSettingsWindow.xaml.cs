@@ -190,6 +190,7 @@ namespace Flurry.Editor.Windows
 
             //Set selected index
             kyberCliTextBox.Text = KyberSettings.CliDirectory;
+            moduleBranchTextInput.Text = KyberSettings.ModuleBranch;
             loadOrderComboBox.SelectedIndex = loadOrderComboBox.Items.Contains(KyberSettings.SelectedLoadOrder) ? loadOrderComboBox.Items.IndexOf(KyberSettings.SelectedLoadOrder) : 0;
             gamemodeComboBox.SelectedIndex = gameModesData.Select(data => data.Item1).Contains(KyberSettings.GameMode) ? gameModesData.Select(data => data.Item1).ToList().IndexOf(KyberSettings.GameMode) : 0;
             RepopulateLevelComboBox(0);
@@ -231,6 +232,7 @@ namespace Flurry.Editor.Windows
             KyberSettings.Level = gameModesData[gamemodeComboBox.SelectedIndex].Item3[levelComboBox.SelectedIndex].Item1;
             KyberSettings.Autostart = (autoStartComboBox.Text == "Enabled");
             KyberSettings.DebugMode = (debugModeComboBox.Text == "Enabled");
+            KyberSettings.ModuleBranch = moduleBranchTextInput.Text;
             KyberSettings.TeamId = teamIdComboBox.SelectedIndex;
             KyberSettings.AutoplayerType = autoplayerTypeComboBox.Text;
             KyberSettings.Team1Bots = team1AutoplayerCountComboBox.SelectedIndex;

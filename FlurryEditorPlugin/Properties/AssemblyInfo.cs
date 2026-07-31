@@ -26,7 +26,7 @@ using System.Windows;
 
 [assembly: PluginDisplayName("Flurry Tweaks (Editor)")]
 [assembly: PluginAuthor("AdamRaichu")]
-[assembly: PluginVersion("1.1.0")]
+[assembly: PluginVersion("1.1.1")]
 [assembly: RegisterStartupAction(typeof(HarmonyPatcherAction))]
 [assembly: RegisterOptionsExtension(typeof(FlurryEditorConfig), PluginManagerType.Editor)]
 [assembly: RegisterMenuExtension(typeof(LoadOrderEditorMenuExt), PluginManagerType.Editor)]
