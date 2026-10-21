@@ -15,6 +15,27 @@ namespace Flurry.Editor
         [EbxFieldMeta(EbxFieldType.Boolean)]
         public bool HarmonyDebug { get; set; } = false;
 
+        [Category("_General")]
+        [DisplayName("Blocked Log Regex Patterns")]
+        [Description("Semicolon or newline-separated regex patterns. Matching log lines are hidden.")]
+        [Editor(typeof(FrostyStringEditor))]
+        [EbxFieldMeta(EbxFieldType.String)]
+        public string BlockedLogRegexPatterns { get; set; } = string.Empty;
+
+        [Category("_General")]
+        [DisplayName("Use Local Config Directory")]
+        [Description("Store Flurry config redirection in a local directory for this instance.")]
+        [Editor(typeof(FrostyBooleanEditor))]
+        [EbxFieldMeta(EbxFieldType.Boolean)]
+        public bool UseLocalConfigDirectory { get; set; } = false;
+
+        [Category("_General")]
+        [DisplayName("Local Config Directory")]
+        [Description("Directory used when local config mode is enabled.")]
+        [Editor(typeof(FrostyStringEditor))]
+        [EbxFieldMeta(EbxFieldType.String)]
+        public string LocalConfigDirectory { get; set; } = string.Empty;
+
         [Category("zz__Meta__DoNotEdit")]
         [IsHidden()]
         public bool HasAcknowledgedStartupMessage { get; set; } = false;
@@ -68,6 +89,17 @@ namespace Flurry.Editor
         public override void Load()
         {
             HarmonyDebug = Config.Get<bool>("Flurry.HarmonyDebug", false);
+            BlockedLogRegexPatterns = Config.Get<string>("Flurry.BlockedLogRegexPatterns", string.Empty);
+            UseLocalConfigDirectory = Config.Get<bool>("Flurry.UseLocalConfigDirectory", false);
+            LocalConfigDirectory = Config.Get<string>("Flurry.LocalConfigDirectory", string.Empty);
+
+            LocalConfigRedirectState state = FlurryLocalConfigRedirect.LoadState();
+            if (state != null && (!string.IsNullOrWhiteSpace(state.DirectoryPath) || state.Enabled))
+            {
+                UseLocalConfigDirectory = state.Enabled;
+                LocalConfigDirectory = state.DirectoryPath ?? string.Empty;
+            }
+
             HasAcknowledgedStartupMessage = Config.Get<bool>("Flurry.HasAcknowledgedStartupMessage", false);
             AutosaveOnExport = Config.Get<bool>("Flurry.AutosaveOnExport", true);
             BlueprintEditorTweaks = Config.Get<bool>("Flurry.BlueprintEditorTweaks", false);
@@ -80,6 +112,9 @@ namespace Flurry.Editor
         public override void Save()
         {
             Config.Add("Flurry.HarmonyDebug", HarmonyDebug);
+            Config.Add("Flurry.BlockedLogRegexPatterns", BlockedLogRegexPatterns ?? string.Empty);
+            Config.Add("Flurry.UseLocalConfigDirectory", UseLocalConfigDirectory);
+            Config.Add("Flurry.LocalConfigDirectory", LocalConfigDirectory ?? string.Empty);
             Config.Add("Flurry.HasAcknowledgedStartupMessage", HasAcknowledgedStartupMessage);
             Config.Add("Flurry.AutosaveOnExport", AutosaveOnExport);
             Config.Add("Flurry.BlueprintEditorTweaks", BlueprintEditorTweaks);
@@ -87,6 +122,8 @@ namespace Flurry.Editor
             Config.Add("Flurry.ReferencesTabTweaks", ReferencesTabTweaks);
             Config.Add("Flurry.BundlesTabTweaks", BundlesTabTweaks);
             Config.Add("Flurry.KyberIntegration", KyberIntegration);
+
+            FlurryLocalConfigRedirect.SaveState(UseLocalConfigDirectory, LocalConfigDirectory);
             Config.Save();
         }
 

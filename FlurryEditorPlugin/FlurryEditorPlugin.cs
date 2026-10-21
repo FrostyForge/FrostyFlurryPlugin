@@ -4,6 +4,8 @@ using Frosty.Core;
 using FrostySdk.Interfaces;
 using HarmonyLib;
 using System;
+using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Media;
 
@@ -13,6 +15,10 @@ namespace Flurry.Editor
     {
         public override Action<ILogger> Action => logger =>
         {
+            ExtractEmbeddedMappings(logger);
+
+            FlurryLocalConfigRedirect.ApplyRuntimeRedirect(PluginManagerType.Editor);
+
             FlurryEditorConfig config = new FlurryEditorConfig();
             config.Load();
             Harmony.DEBUG = config.HarmonyDebug;
@@ -25,6 +31,44 @@ namespace Flurry.Editor
                     break;
             }
         };
+
+        private void ExtractEmbeddedMappings(ILogger logger)
+        {
+            string flurryDataDir = Path.Combine(
+                Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location) ?? AppDomain.CurrentDomain.BaseDirectory,
+                "Plugins", "FlurryData");
+
+            string[] mappings = { "FacePoserMappings.json", "WeaponMappings.json" };
+            foreach (var mapping in mappings)
+            {
+                string destPath = Path.Combine(flurryDataDir, mapping);
+                if (File.Exists(destPath))
+                    continue;
+
+                try
+                {
+                    string resourceName = $"Flurry.Editor.Data.{mapping}";
+                    using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+                    {
+                        if (stream == null)
+                        {
+                            logger.LogWarning($"[Flurry] Embedded resource not found: {resourceName}");
+                            continue;
+                        }
+
+                        Directory.CreateDirectory(flurryDataDir);
+                        using (FileStream fs = new FileStream(destPath, FileMode.Create, FileAccess.Write))
+                            stream.CopyTo(fs);
+
+                        logger.Log($"[Flurry] Extracted {mapping} to {destPath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning($"[Flurry] Failed to extract {mapping}: {ex.Message}");
+                }
+            }
+        }
 
         private void ApplyEditorOnlyPatches(ILogger taskLogger)
         {

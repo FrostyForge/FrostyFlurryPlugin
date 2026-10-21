@@ -53,34 +53,46 @@
     <PackageReference Include="Costura.Fody" Version="6.0.0">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="DiffPlex.Wpf" Version="1.9.1" />
-    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <PackageReference Include="DiffPlex.Wpf" Version="1.9.1">
+      <Private>false</Private>
+    </PackageReference>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2">
+      <Private>false</Private>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CSharp" Version="4.7.0">
+      <Private>false</Private>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyControls\FrostyControls.csproj">
+    <Reference Include="FrostyControls">
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyControls.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyHash\FrostyHash.vcxproj">
+    </Reference>
+    <Reference Include="FrostyHash">
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyHash.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyPlugin\FrostyCore.csproj">
+    </Reference>
+    <Reference Include="FrostyCore">
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyCore.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostySdk\FrostySdk.csproj">
+    </Reference>
+    <Reference Include="FrostySdk">
+      <HintPath>$(FrostyEditorInstallationPath)\FrostySdk.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyEditor\FrostyEditor.csproj">
+    </Reference>
+    <Reference Include="FrostyEditor">
+      <HintPath>$(FrostyEditorInstallationPath)\FrostyEditor.exe</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference
-      Include="D:\Frosty\FrostyToolsuite\Plugins\ReferencesPlugin\ReferencesPlugin.csproj">
+    </Reference>
+    <Reference Include="ReferencesPlugin">
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\ReferencesPlugin.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
-    <ProjectReference
-      Include="D:\Frosty\FrostyToolsuite\Plugins\BundleEditorPlugin\BundleEditorPlugin.csproj">
+    </Reference>
+    <Reference Include="BundleEditorPlugin">
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\BundleEditorPlugin.dll</HintPath>
       <Private>false</Private>
-    </ProjectReference>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
@@ -89,12 +101,29 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="MeshSetPlugin">
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\MeshSetPlugin.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ChunkResEditorPlugin">
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\ChunkResEditorPlugin.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="DuplicationPlugin">
+      <HintPath>$(FrostyEditorInstallationPath)\Plugins\DuplicationPlugin.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="0Harmony">
       <HintPath>ThirdParty\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>..\..\FrostyToolsuite\FrostyEditor\ThirdParty\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(FrostyEditorInstallationPath)\ThirdParty\Newtonsoft.Json.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\FacePoserMappings.json" />
+    <EmbeddedResource Include="Data\WeaponMappings.json" />
   </ItemGroup>
 
   <!--
