@@ -519,29 +519,55 @@ namespace Flurry.Editor.Patches
             }
 
             string openedFile = args[1];
-            if (!openedFile.EndsWith(".fxproject", StringComparison.OrdinalIgnoreCase))
+            if (openedFile.EndsWith(".fxproject", StringComparison.OrdinalIgnoreCase))
             {
-                // Not a .fxproject file, ignore.
-                return;
+                // load fxproject file
+                string dir = Path.GetDirectoryName(openedFile);
+                //ProjectImporter.ImportDirectory(dir);
+
+                Window mainWindow = __instance;
+
+                MethodInfo loadProjectMethod = mainWindow.GetType().GetMethod("LoadProject",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+
+                if (loadProjectMethod == null)
+                {
+                    SCLog.Error(" Could not find LoadProject method");
+                    return;
+                }
+
+                loadProjectMethod.Invoke(mainWindow, new object[] { dir, false });
+                __instance.AddRecentProject(dir);
             }
+            #endregion
 
-            // load fxproject file
-            string dir = Path.GetDirectoryName(openedFile);
-            //ProjectImporter.ImportDirectory(dir);
-
-            Window mainWindow = __instance;
-
-            MethodInfo loadProjectMethod = mainWindow.GetType().GetMethod("LoadProject",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-
-            if (loadProjectMethod == null)
+            #region AutoBuild script
+            if (args[2] == "AutoBuild")
             {
-                SCLog.Error(" Could not find LoadProject method");
-                return;
+                
+                Console.WriteLine("Starting AutoBuild...");
+                CancellationToken cancelToken = new CancellationTokenSource().Token;
+                Console.WriteLine("Running pre-launch actions...");
+                foreach (ExecutionAction executionAction in App.PluginManager.ExecutionActions)
+                {
+                    executionAction.PreLaunchAction(App.Logger, PluginManagerType.Editor, cancelToken);
+                }
+                Console.WriteLine("Exporting mod...");
+                __instance.ExportMod(__instance.Project.GetModSettings(), "./build/" + (args[3] ?? "noFourthArg.fbmod"), true, cancelToken);
+                Console.WriteLine("Running post-launch actions...");
+                try
+                {
+                    foreach (ExecutionAction executionAction in App.PluginManager.ExecutionActions)
+                    {
+                        executionAction?.PostLaunchAction(App.Logger, PluginManagerType.Editor, cancelToken);
+                    }
+                } catch (Exception ex)
+                {
+                    Console.WriteLine("Post-launch actions failed: " + ex.Message);
+                    Console.WriteLine(ex.StackTrace);
+                }
+                Console.WriteLine("BUILD_COMPLETE");
             }
-
-            loadProjectMethod.Invoke(mainWindow, new object[] { dir, false });
-            __instance.AddRecentProject(dir);
             #endregion
         }
 
