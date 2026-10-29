@@ -541,8 +541,13 @@ namespace Flurry.Editor.Patches
             }
             #endregion
 
+            if (args.Length <= 2)
+            {
+                return;
+            }
+
             #region AutoBuild script
-            if (args[2] == "AutoBuild")
+            if (args[2]?.Equals("AutoBuild") ?? false)
             {
                 
                 Console.WriteLine("Starting AutoBuild...");
