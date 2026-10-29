@@ -78,7 +78,7 @@ namespace Flurry.Editor
                     CreateInstance(child);
             }
 
-            App.Logger.Log($"Processing {m_guidToObjAndXml.Count} instances...");
+            //App.Logger.Log($"Processing {m_guidToObjAndXml.Count} instances...");
 
             //foreach (var kvp in m_guidToObjAndXml)
             //{
@@ -136,7 +136,7 @@ namespace Flurry.Editor
             bool isRoot = Boolean.Parse(GetAttr(node, "root"));
             if (isRoot)
             {
-                App.Logger.Log($"Processing root object {instGuid.ToString()}");
+                //App.Logger.Log($"Processing root object {instGuid.ToString()}");
                 m_guidToRefCount[instGuid] = 0;
             }
 
