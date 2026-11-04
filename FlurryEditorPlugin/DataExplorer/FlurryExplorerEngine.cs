@@ -45,6 +45,11 @@ namespace Flurry.Editor.DataExplorer
         public readonly object BaseLock = new object();
         public int SelectGeneration;
         public bool SuppressSelection;
+        public bool BaseTreeDisplayed;
+        public string DesiredSelectionPath;
+        public IEnumerable DeferredItemsSource;
+        public TaskCompletionSource<bool> DeferredBuildTcs;
+        internal const int SwapIntervalMs = 150;
 
         // Delegates retained so template re-application can unsubscribe stale handlers.
         public KeyEventHandler FilterKeyDownHandler;
@@ -533,8 +538,37 @@ namespace Flurry.Editor.DataExplorer
         {
             TreeView treeView = AssetTreeViewRef(ctrl);
             IEnumerable items = ctrl.ItemsSource;
-            if (treeView == null || items == null)
+            if (treeView == null)
+            {
+                if (items != null)
+                {
+                    // The template has not been applied yet, so the tree parts do not exist.
+                    // Defer the build until OnApplyTemplate runs; the returned task stays
+                    // incomplete until then, keeping the SelectAsset gate honest.
+                    state.DeferredItemsSource = items;
+                    state.DeferredBuildTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    return state.DeferredBuildTcs.Task;
+                }
+
                 return Task.CompletedTask;
+            }
+
+            if (items == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return StartMappingBuild(ctrl, state, items);
+        }
+
+        internal static Task RunDeferredMapping(FrostyDataExplorer ctrl, FlurryExplorerState state, IEnumerable items)
+        {
+            return StartMappingBuild(ctrl, state, items);
+        }
+
+        private static Task StartMappingBuild(FrostyDataExplorer ctrl, FlurryExplorerState state, IEnumerable items)
+        {
+            TreeView treeView = AssetTreeViewRef(ctrl);
 
             // Show a placeholder immediately so the tree does not appear frozen while building.
             var placeholder = new FlurryAssetPath("", "", null);
@@ -549,9 +583,42 @@ namespace Flurry.Editor.DataExplorer
                 {
                     lock (state.BaseLock)
                     {
-                        BuildBaseTree(state, items);
+                        PrepareBaseTree(state);
                     }
 
+                    var buildStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    long lastSwapMs = -FlurryExplorerState.SwapIntervalMs;
+                    var seenEntries = new HashSet<AssetEntry>();
+
+                    foreach (AssetEntry entry in items)
+                    {
+                        seenEntries.Add(entry);
+
+                        FlurryAssetPath rootPath;
+                        lock (state.BaseLock)
+                        {
+                            rootPath = state.Root.Children.TryGetValue(RootKeyName, out rootPath) ? rootPath : null;
+                            InsertEntry(state, state.Root, rootPath, entry);
+                        }
+
+                        if (buildStopwatch.ElapsedMilliseconds - lastSwapMs >= FlurryExplorerState.SwapIntervalMs)
+                        {
+                            lastSwapMs = buildStopwatch.ElapsedMilliseconds;
+                            await SwapPartialTreeAsync(ctrl, state, generation);
+                            if (state.Generation != generation)
+                                return;
+                        }
+                    }
+
+                    lock (state.BaseLock)
+                    {
+                        state.BaseEntries.Clear();
+                        foreach (AssetEntry entry in seenEntries)
+                            state.BaseEntries.Add(entry);
+                        state.BaseEntryCount = seenEntries.Count;
+                    }
+
+                    await SwapPartialTreeAsync(ctrl, state, generation);
                     if (state.Generation != generation)
                         return;
 
@@ -567,6 +634,52 @@ namespace Flurry.Editor.DataExplorer
                 catch (Exception ex)
                 {
                     App.Logger.LogError(ex.ToString());
+                }
+            });
+        }
+
+        private static void PrepareBaseTree(FlurryExplorerState state)
+        {
+            FlurryAssetPath oldBase = state.Root;
+
+            var newBase = new FlurryAssetPath("", "", null);
+            var rootPath = new FlurryAssetPath(RootDisplayName, "", null, true);
+            newBase.Children.Add(RootKeyName, rootPath);
+
+            GraftCloneLinks(oldBase, newBase);
+
+            state.Root = newBase;
+        }
+
+        private static async Task SwapPartialTreeAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, int generation)
+        {
+            List<FlurryAssetPath> snapshot;
+            lock (state.BaseLock)
+            {
+                snapshot = new List<FlurryAssetPath>();
+                foreach (FlurryAssetPath child in state.Root.Children.Values.OrderBy(c => c.DisplayName))
+                    snapshot.Add(child);
+            }
+
+            await ctrl.Dispatcher.InvokeAsync(() =>
+            {
+                if (state.Generation != generation)
+                    return;
+
+                // Suppress selection events: rebinding clears the TreeView selection and
+                // raising that here would bump SelectGeneration and kill any pending
+                // early selection that is waiting for its path to appear.
+                state.SuppressSelection = true;
+                try
+                {
+                    state.BaseTreeDisplayed = true;
+                    TreeView treeView = AssetTreeViewRef(ctrl);
+                    if (treeView != null)
+                        treeView.ItemsSource = snapshot;
+                }
+                finally
+                {
+                    state.SuppressSelection = false;
                 }
             });
         }
@@ -607,7 +720,7 @@ namespace Flurry.Editor.DataExplorer
                     next = new FlurryAssetPath(part, "", current);
                     current.Children[part] = next;
 
-                    if (current.VisibleChildren.Count == 0)
+                    if (!current.IsLazyLoaded && current.VisibleChildren.Count == 0)
                         current.VisibleChildren.Add(new FlurryAssetPath(LoadingDisplayName, "", null));
                 }
                 else if (part.Any(char.IsUpper))
@@ -717,7 +830,7 @@ namespace Flurry.Editor.DataExplorer
                     if (generation != state.Generation)
                         return;
 
-                    await ctrl.Dispatcher.InvokeAsync(() => ApplyTreeViewResult(ctrl, state, treeView, newRoot, generation));
+                    await ctrl.Dispatcher.InvokeAsync(() => ApplyTreeViewResultAsync(ctrl, state, treeView, newRoot, generation));
                 }
                 catch (Exception ex)
                 {
@@ -730,12 +843,15 @@ namespace Flurry.Editor.DataExplorer
             });
         }
 
-        private static void ApplyTreeViewResult(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, FlurryAssetPath newRoot, int generation)
+        private static async Task ApplyTreeViewResultAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, FlurryAssetPath newRoot, int generation)
         {
             if (generation != state.Generation)
+            {
                 return;
+            }
 
-            string selectedFullPath = state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null;
+            string selectedFullPath = state.DesiredSelectionPath ??
+                (state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null);
 
             state.SuppressSelection = true;
             try
@@ -750,6 +866,13 @@ namespace Flurry.Editor.DataExplorer
                     state.SelectedNode = selectedNode;
                     selectedNode.IsSelected = true;
                     ctrl.SelectedPath = selectedNode.IsRoot ? "" : selectedNode.FullPath;
+                    if (state.DesiredSelectionPath != null && string.Equals(state.DesiredSelectionPath, selectedNode.FullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        state.DesiredSelectionPath = null;
+                    }
+                    else
+                    {
+                    }
                 }
                 else
                 {
@@ -757,11 +880,57 @@ namespace Flurry.Editor.DataExplorer
                     ctrl.SelectedPath = "";
                 }
 
-                UpdateListViewAsync(ctrl, state, selectedNode, true);
+                await UpdateListViewAsync(ctrl, state, selectedNode, true);
+
+                // A deep selection is not visible until its ancestor containers are
+                // realized; expand the path so the highlight actually shows up.
+                if (selectedNode != null && !string.IsNullOrEmpty(selectedFullPath) && selectedFullPath != RootDisplayName)
+                {
+                    int revealGen = state.SelectGeneration;
+                    _ = RevealDeferredSelectionAsync(ctrl, state, treeView, selectedFullPath, revealGen);
+                }
             }
             finally
             {
                 state.SuppressSelection = false;
+            }
+        }
+
+        private static List<FlurryAssetPath> ResolveTraversalStackByPath(FlurryExplorerState state, string fullPath)
+        {
+            string[] segments = fullPath.Length > 0
+                ? fullPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                : new[] { RootKeyName };
+
+            var stack = new List<FlurryAssetPath>();
+            lock (state.BaseLock)
+            {
+                FlurryAssetPath cursor = state.Root;
+                if (cursor != null)
+                    stack.Add(cursor);
+
+                foreach (string segment in segments)
+                {
+                    if (cursor == null || !cursor.Children.TryGetValue(segment, out FlurryAssetPath next))
+                        break;
+                    cursor = next;
+                    stack.Add(cursor);
+                }
+            }
+            return stack;
+        }
+
+        private static async Task RevealDeferredSelectionAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, string fullPath, int revealGen)
+        {
+            List<FlurryAssetPath> stack = ResolveTraversalStackByPath(state, fullPath);
+            TreeViewItem container = await RevealPathAsync(ctrl, state, treeView, stack, revealGen);
+            if (container != null)
+            {
+                container.UpdateLayout();
+                state.SuppressSelection = true;
+                try { container.IsSelected = true; }
+                finally { state.SuppressSelection = false; }
+                container.BringIntoView();
             }
         }
 
@@ -847,10 +1016,24 @@ namespace Flurry.Editor.DataExplorer
         {
             state.SelectGeneration++;
             int selectGen = state.SelectGeneration;
+            state.DesiredSelectionPath = null;
 
-            await state.ReadyTcs.Task;
-            if (state.SelectGeneration != selectGen)
-                return;
+            // If the base tree is still being built, select as soon as the target's folder
+            // path has appeared in the progressively displayed tree instead of waiting for
+            // the full build. The final swap re-selects the folder and fills the asset list.
+            bool buildInFlight = !state.ReadyTcs.Task.IsCompleted;
+            if (buildInFlight)
+            {
+                await WaitForSelectionTargetAsync(state, entry, selectGen);
+                if (state.SelectGeneration != selectGen)
+                    return;
+            }
+
+            // Re-check after waiting: if the build finished while waiting, run the normal
+            // visual selection; otherwise record the desired path and let the build's final
+            // swap perform the visual selection (containers from partial snapshots do not
+            // survive that swap).
+            bool buildStillInFlight = !state.ReadyTcs.Task.IsCompleted;
 
             TreeView treeView = AssetTreeViewRef(ctrl);
             if (treeView == null)
@@ -886,13 +1069,28 @@ namespace Flurry.Editor.DataExplorer
                             return;
                     }
 
+                    if (buildStillInFlight)
+                    {
+                        // The build is still running; containers realized against a partial
+                        // snapshot would not survive the final swap. Record the desired path
+                        // and let the next tree swap perform the visual selection instead
+                        // (ApplyTreeViewResult consumes it and fills the asset list).
+                        state.DesiredSelectionPath = entry.Path;
+                        ctrl.SelectedAsset = entry;
+                        return;
+                    }
+
                     List<FlurryAssetPath> traversalStack = ResolveTraversalStack(state, entry);
                     TreeViewItem container = await RevealPathAsync(ctrl, state, treeView, traversalStack, selectGen);
                     if (state.SelectGeneration != selectGen)
+                    {
                         return;
+                    }
 
                     if (container == null && traversalStack.Count > 1)
+                    {
                         container = WalkRealizedContainers(state, treeView, traversalStack);
+                    }
                     if (state.SelectGeneration != selectGen)
                         return;
 
@@ -915,7 +1113,7 @@ namespace Flurry.Editor.DataExplorer
                         ctrl.SelectedPath = current == null || current.IsRoot ? "" : current.FullPath;
                     }
 
-                    if (ctrl.AssetListVisible)
+                    if (ctrl.AssetListVisible && !buildInFlight)
                     {
                         await UpdateListViewAsync(ctrl, state, current, true);
                         if (state.SelectGeneration != selectGen)
@@ -1018,15 +1216,11 @@ namespace Flurry.Editor.DataExplorer
                     target.LazyLoadChildren();
                 }
 
-                await Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                if (state.SelectGeneration != selectGen)
-                    return null;
-
                 if (container != null)
                 {
                     container.IsExpanded = true;
                     container.UpdateLayout();
-                    await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                    await Dispatcher.Yield(DispatcherPriority.Loaded);
                     if (state.SelectGeneration != selectGen)
                         return null;
 
@@ -1078,15 +1272,56 @@ namespace Flurry.Editor.DataExplorer
             return container;
         }
 
+        private static async Task WaitForSelectionTargetAsync(FlurryExplorerState state, AssetEntry entry, int selectGen)
+        {
+            string[] segments = entry.Path.Length > 0
+                ? entry.Path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                : new[] { RootKeyName };
+
+            while (true)
+            {
+                if (state.SelectGeneration != selectGen)
+                    return;
+
+                if (state.ReadyTcs.Task.IsCompleted)
+                    return;
+
+                bool ready = false;
+                lock (state.BaseLock)
+                {
+                    if (state.BaseTreeDisplayed && state.Root != null)
+                    {
+                        FlurryAssetPath cursor = state.Root;
+                        ready = true;
+                        foreach (string segment in segments)
+                        {
+                            FlurryAssetPath next;
+                            if (cursor == null || !cursor.Children.TryGetValue(segment, out next))
+                            {
+                                ready = false;
+                                break;
+                            }
+                            cursor = next;
+                        }
+                    }
+                }
+
+                if (ready)
+                    return;
+
+                await Task.Delay(25);
+            }
+        }
+
         private static async Task<T> GetContainerFromItemAsync<T>(ItemsControl parent, object item, FlurryExplorerState state, int selectGen)
             where T : DependencyObject
         {
-            int retries = 40;
+            int retries = 100;
             while (parent.ItemContainerGenerator.ContainerFromItem(item) as T == null && retries-- > 0)
             {
                 if (state.SelectGeneration != selectGen)
                     return null;
-                await Task.Delay(50);
+                await Task.Delay(20);
                 parent.UpdateLayout();
             }
 
@@ -1101,13 +1336,13 @@ namespace Flurry.Editor.DataExplorer
             if (index < 0)
                 return false;
 
-            int retries = 20;
+            int retries = 50;
             VirtualizingStackPanel panel = FindVirtualizingStackPanel(parent);
             while (panel == null && retries-- > 0)
             {
                 if (state.SelectGeneration != selectGen)
                     return false;
-                await Task.Delay(50);
+                await Task.Delay(20);
                 panel = FindVirtualizingStackPanel(parent);
             }
 
@@ -1115,7 +1350,7 @@ namespace Flurry.Editor.DataExplorer
                 return false;
 
             panel.BringIndexIntoViewPublic(index);
-            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            await Dispatcher.Yield(DispatcherPriority.Loaded);
             return true;
         }
 
@@ -1216,3 +1451,4 @@ namespace Flurry.Editor.DataExplorer
         #endregion
     }
 }
+

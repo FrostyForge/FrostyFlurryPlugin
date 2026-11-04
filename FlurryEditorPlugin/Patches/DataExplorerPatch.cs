@@ -1,7 +1,8 @@
-using Flurry.Editor.DataExplorer;
+﻿using Flurry.Editor.DataExplorer;
 using Frosty.Core.Controls;
 using FrostySdk.Managers;
 using HarmonyLib;
+using System.Collections;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -35,6 +36,8 @@ namespace Flurry.Editor.Patches
             state.SelectGeneration++;
             state.ReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             TaskCompletionSource<bool> readyTcs = state.ReadyTcs;
+            state.BaseTreeDisplayed = false;
+            state.DeferredItemsSource = null;
             state.Generation++;
             state.SelectedNode = null;
             state.Root = null;
@@ -51,11 +54,12 @@ namespace Flurry.Editor.Patches
             Task populateTypes = FlurryExplorerEngine.PopulateAssetTypesComboBox(ctrl, state);
             Task buildMapping = FlurryExplorerEngine.CreateAssetPathMappingAsync(ctrl, state);
             int generation = state.Generation;
-            _ = Task.WhenAll(populateTypes, buildMapping).ContinueWith(_ =>
+            _ = buildMapping.ContinueWith(_ =>
             {
                 readyTcs.TrySetResult(true);
                 FlurryExplorerEngine.SetProgressVisible(state, ctrl, generation, false);
             }, TaskScheduler.Default);
+            _ = populateTypes;
 
             return false;
         }
@@ -130,6 +134,10 @@ namespace Flurry.Editor.Patches
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             if (!state.SuppressSelection)
                 state.SelectGeneration++;
+            if (e.NewValue != null && state.DesiredSelectionPath != null)
+            {
+                state.DesiredSelectionPath = null;
+            }
             if (state.SuppressModified)
                 return false;
 
@@ -181,8 +189,11 @@ namespace Flurry.Editor.Patches
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
 
-            // Release SelectAsset waiters if ItemsSource never arrives.
-            state.ReadyTcs.TrySetResult(true);
+            // Release SelectAsset waiters only when no ItemsSource exists at all; when an
+            // ItemsSource is set, a build is in flight (or about to start) and completing
+            // the gate here would let selection run against an empty tree.
+            if (__instance.ItemsSource == null)
+                state.ReadyTcs.TrySetResult(true);
 
             state.FilterProgressBar = __instance.Template.FindName(PartFilterProgressBarName, __instance) as ProgressBar;
             state.FilterInProgressBorder = __instance.Template.FindName(PartFilterInProgressBorderName, __instance) as Border;
@@ -201,7 +212,18 @@ namespace Flurry.Editor.Patches
 
             FlurryExplorerEngine.ConfigureVirtualization(__instance);
 
-            if (state.Root == null && __instance.ItemsSource != null)
+            if (state.DeferredItemsSource != null && state.Root == null)
+            {
+                // The build was deferred because the template was not yet applied when
+                // ItemsSource was assigned. Run it now and complete its gate on finish.
+                IEnumerable deferredItems = state.DeferredItemsSource;
+                state.DeferredItemsSource = null;
+
+                Task deferredBuild = FlurryExplorerEngine.RunDeferredMapping(__instance, state, deferredItems);
+                TaskCompletionSource<bool> deferredTcs = state.DeferredBuildTcs;
+                _ = deferredBuild.ContinueWith(_ => deferredTcs.TrySetResult(true), TaskScheduler.Default);
+            }
+            else if (state.Root == null && __instance.ItemsSource != null)
                 _ = FlurryExplorerEngine.CreateAssetPathMappingAsync(__instance, state);
         }
     }
