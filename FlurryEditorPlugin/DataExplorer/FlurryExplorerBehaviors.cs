@@ -3,6 +3,10 @@ using Frosty.Core.Controls;
 
 namespace Flurry.Editor.DataExplorer
 {
+    /// <summary>
+    /// Attached properties backing the extra "Show Only" check boxes that the fast-mode
+    /// Data Explorer template injects next to Frosty's built-in "Modified" filter.
+    /// </summary>
     public static class FlurryExplorerBehaviors
     {
         public static readonly DependencyProperty ShowOnlyUnModifiedProperty = DependencyProperty.RegisterAttached(
@@ -26,14 +30,17 @@ namespace Flurry.Editor.DataExplorer
         private static void OnShowOnlyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             FrostyDataExplorer ctrl = d as FrostyDataExplorer;
-            if (ctrl == null) return;
-            if (!Patches.FlurryDataExplorerFastMode.Enabled) return;
+            if (ctrl == null || !FlurryExplorerEngine.FastModeEnabled)
+                return;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(ctrl);
-            if (state.SuppressModified) return;
+            if (state.SuppressModified)
+                return;
 
             if ((bool)e.NewValue)
             {
+                // The "Show Only" flags are mutually exclusive; suppressing the flag callbacks
+                // prevents each change from triggering its own rebuild.
                 state.SuppressModified = true;
                 try
                 {
@@ -50,7 +57,10 @@ namespace Flurry.Editor.DataExplorer
                         SetShowOnlyUnModified(ctrl, false);
                     }
                 }
-                finally { state.SuppressModified = false; }
+                finally
+                {
+                    state.SuppressModified = false;
+                }
             }
 
             FlurryExplorerEngine.UpdateTreeViewAsync(ctrl, state);

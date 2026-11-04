@@ -8,6 +8,12 @@ using System.Linq;
 
 namespace Flurry.Editor.DataExplorer
 {
+    /// <summary>
+    /// A folder node in the Data Explorer hierarchy. The "base" tree holds every entry and
+    /// is never bound to the UI; <see cref="Copy"/> produces filter clones which the UI
+    /// binds to. <see cref="Clone"/> links a base node to its most recent clone so expanded/
+    /// selected visual state can be restored across filter runs and rebuilds.
+    /// </summary>
     public class FlurryAssetPath : INotifyPropertyChanged
     {
         public string DisplayName => PathName.Trim('!');
@@ -103,6 +109,7 @@ namespace Flurry.Editor.DataExplorer
         public void UpdatePathName(string newName)
         {
             PathName = newName;
+            fullPath = "";
         }
 
         public FlurryAssetPath Search(Func<AssetEntry, bool> entryFilterFunction, bool keepVisualState = false)
@@ -165,11 +172,6 @@ namespace Flurry.Editor.DataExplorer
             {
                 return null;
             }
-        }
-
-        public int GetEntryCount()
-        {
-            return Entries.Count + Children.Aggregate(0, (acc, i) => acc + i.Value.GetEntryCount());
         }
 
         public void LazyLoadChildren()

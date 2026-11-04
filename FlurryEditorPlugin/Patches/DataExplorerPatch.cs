@@ -2,31 +2,37 @@ using Flurry.Editor.DataExplorer;
 using Frosty.Core.Controls;
 using FrostySdk.Managers;
 using HarmonyLib;
-using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 
 namespace Flurry.Editor.Patches
 {
-    internal static class FlurryDataExplorerFastMode
-    {
-        internal static bool Enabled;
-    }
-
+    /// <summary>
+    /// Redirects FrostyDataExplorer internals to the fast-mode engine. Prefixes suppress the
+    /// stock synchronous implementation; postfixes wire template parts Frosty does not know
+    /// about. All patches are inert unless <see cref="FlurryExplorerEngine.FastModeEnabled"/>
+    /// is set during plugin startup.
+    /// </summary>
     [HarmonyPatch(typeof(FrostyDataExplorer))]
     [HarmonyPatchCategory("flurry.dataexplorer")]
     internal static class FrostyDataExplorerFastPatches
     {
+        private const string PartTypeComboBoxName = "PART_TypeComboBox";
+        private const string PartFilterProgressBarName = "PART_FilterProgressBar";
+        private const string PartFilterInProgressBorderName = "PART_FilterInProgressBorder";
+
         [HarmonyPatch("OnItemsSourceChanged")]
         [HarmonyPrefix]
         static bool OnItemsSourceChanged_Prefix(DependencyObject o, DependencyPropertyChangedEventArgs e)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FrostyDataExplorer ctrl = (FrostyDataExplorer)o;
             FlurryExplorerState state = FlurryExplorerEngine.GetState(ctrl);
+
+            state.SelectGeneration++;
             state.ReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             TaskCompletionSource<bool> readyTcs = state.ReadyTcs;
             state.Generation++;
@@ -40,15 +46,16 @@ namespace Flurry.Editor.Patches
             if (assetListView != null)
                 assetListView.ItemsSource = null;
 
-            FlurryExplorerEngine.ShowProgress(state, ctrl);
+            FlurryExplorerEngine.SetProgressVisible(state, ctrl, true);
 
-            var populateTypes = FlurryExplorerEngine.PopulateAssetTypesComboBox(ctrl, state);
-            var buildMapping = FlurryExplorerEngine.CreateAssetPathMappingAsync(ctrl, state);
-            _ = Task.Factory.ContinueWhenAll(new Task[] { populateTypes, buildMapping }, tasks =>
+            Task populateTypes = FlurryExplorerEngine.PopulateAssetTypesComboBox(ctrl, state);
+            Task buildMapping = FlurryExplorerEngine.CreateAssetPathMappingAsync(ctrl, state);
+            int generation = state.Generation;
+            _ = Task.WhenAll(populateTypes, buildMapping).ContinueWith(_ =>
             {
                 readyTcs.TrySetResult(true);
-                FlurryExplorerEngine.HideProgress(state, ctrl);
-            });
+                FlurryExplorerEngine.SetProgressVisible(state, ctrl, generation, false);
+            }, TaskScheduler.Default);
 
             return false;
         }
@@ -57,7 +64,8 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool OnShowOnlyModifiedChanged_Prefix(DependencyObject o, DependencyPropertyChangedEventArgs e)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FrostyDataExplorer ctrl = (FrostyDataExplorer)o;
             FlurryExplorerState state = FlurryExplorerEngine.GetState(ctrl);
@@ -66,6 +74,8 @@ namespace Flurry.Editor.Patches
 
             if ((bool)e.NewValue && FlurryExplorerBehaviors.GetShowOnlyUnModified(ctrl))
             {
+                // Mutually exclusive with the "Unmodified" checkbox. Suppress the behavior's
+                // own rebuild: Frosty's original callback runs right after and rebuilds once.
                 state.SuppressModified = true;
                 try { FlurryExplorerBehaviors.SetShowOnlyUnModified(ctrl, false); }
                 finally { state.SuppressModified = false; }
@@ -78,7 +88,8 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool UpdateTreeView_Prefix(FrostyDataExplorer __instance)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             _ = FlurryExplorerEngine.UpdateTreeViewAsync(__instance, state);
@@ -89,7 +100,8 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool SelectAsset_Prefix(FrostyDataExplorer __instance, AssetEntry entry)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             _ = FlurryExplorerEngine.SelectAssetAsync(__instance, state, entry);
@@ -100,19 +112,11 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool RefreshAll_Prefix(FrostyDataExplorer __instance)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             _ = FlurryExplorerEngine.UpdateTreeViewAsync(__instance, state, false, true, true, true);
-
-            ListView assetListView = FlurryExplorerEngine.AssetListViewRef(__instance);
-            if (__instance.SelectedAssets != null && assetListView != null)
-            {
-                foreach (var item in __instance.SelectedAssets)
-                {
-                    assetListView.SelectedItems.Add(item);
-                }
-            }
             return false;
         }
 
@@ -120,15 +124,18 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool AssetTreeView_SelectedItemChanged_Prefix(FrostyDataExplorer __instance, object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             if (!state.SuppressSelection)
                 state.SelectGeneration++;
-            if (state.SuppressModified) return false;
+            if (state.SuppressModified)
+                return false;
 
             TreeView assetTreeView = FlurryExplorerEngine.AssetTreeViewRef(__instance);
-            if (assetTreeView == null) return false;
+            if (assetTreeView == null)
+                return false;
 
             var newItem = assetTreeView.SelectedItem as FlurryAssetPath;
             if (state.SelectedNode != null && !ReferenceEquals(state.SelectedNode, newItem))
@@ -145,7 +152,8 @@ namespace Flurry.Editor.Patches
         [HarmonyPostfix]
         static void AssetListView_SelectionChanged_Postfix(FrostyDataExplorer __instance)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             if (!state.SuppressSelection)
@@ -156,7 +164,8 @@ namespace Flurry.Editor.Patches
         [HarmonyPrefix]
         static bool BuildFilterData_Prefix(FrostyDataExplorer __instance, string filterText)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return true;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             FlurryExplorerEngine.BuildFilterData(state, filterText, __instance);
@@ -167,35 +176,22 @@ namespace Flurry.Editor.Patches
         [HarmonyPostfix]
         static void OnApplyTemplate_Postfix(FrostyDataExplorer __instance)
         {
-            if (!FlurryDataExplorerFastMode.Enabled) return;
+            if (!FlurryExplorerEngine.FastModeEnabled)
+                return;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
 
-            state.FilterProgressBar = __instance.Template.FindName("PART_FilterProgressBar", __instance) as ProgressBar;
-            state.FilterInProgressBorder = __instance.Template.FindName("PART_FilterInProgressBorder", __instance) as Border;
+            // Release SelectAsset waiters if ItemsSource never arrives.
+            state.ReadyTcs.TrySetResult(true);
+
+            state.FilterProgressBar = __instance.Template.FindName(PartFilterProgressBarName, __instance) as ProgressBar;
+            state.FilterInProgressBorder = __instance.Template.FindName(PartFilterInProgressBorderName, __instance) as Border;
 
             TextBox filterBox = FlurryExplorerEngine.FilterTextBoxRef(__instance);
             if (filterBox != null)
-            {
-                filterBox.AddHandler(System.Windows.UIElement.KeyDownEvent, new System.Windows.Input.KeyEventHandler((sender, e) =>
-                {
-                    if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.None)
-                        return;
+                FlurryExplorerEngine.WireFilterTextBox(filterBox, state);
 
-                    if (e.Key == System.Windows.Input.Key.Up)
-                    {
-                        filterBox.CaretIndex = 0;
-                        e.Handled = true;
-                    }
-                    else if (e.Key == System.Windows.Input.Key.Down)
-                    {
-                        filterBox.CaretIndex = filterBox.Text.Length;
-                        e.Handled = true;
-                    }
-                }), true);
-            }
-
-            ComboBox typeComboBox = __instance.Template.FindName("PART_TypeComboBox", __instance) as ComboBox;
+            ComboBox typeComboBox = __instance.Template.FindName(PartTypeComboBoxName, __instance) as ComboBox;
             if (typeComboBox != null)
             {
                 state.TypeComboBox = typeComboBox;
@@ -203,26 +199,10 @@ namespace Flurry.Editor.Patches
                 _ = FlurryExplorerEngine.PopulateAssetTypesComboBox(__instance, state);
             }
 
-            TreeView assetTreeView = FlurryExplorerEngine.AssetTreeViewRef(__instance);
-            if (assetTreeView != null)
-            {
-                assetTreeView.SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
-                assetTreeView.SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
-                assetTreeView.SetValue(ScrollViewer.CanContentScrollProperty, true);
-            }
-
-            ListView assetListView = FlurryExplorerEngine.AssetListViewRef(__instance);
-            if (assetListView != null)
-            {
-                assetListView.SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
-                assetListView.SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
-                assetListView.SetValue(ScrollViewer.CanContentScrollProperty, true);
-            }
+            FlurryExplorerEngine.ConfigureVirtualization(__instance);
 
             if (state.Root == null && __instance.ItemsSource != null)
-            {
                 _ = FlurryExplorerEngine.CreateAssetPathMappingAsync(__instance, state);
-            }
         }
     }
 }

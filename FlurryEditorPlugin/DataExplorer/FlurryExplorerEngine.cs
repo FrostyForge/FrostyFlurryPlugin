@@ -1,59 +1,36 @@
 ﻿using Frosty.Core;
 using Frosty.Core.Controls;
-using Frosty.Hash;
 using FrostySdk;
 using FrostySdk.Managers;
 using HarmonyLib;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace Flurry.Editor.DataExplorer
 {
-    internal enum FlurryFilterCommandType
-    {
-        Contains,
-        StartsWith,
-        EndsWith,
-        RegEx,
-        Type,
-        Id,
-        Hash
-    }
-
-    internal enum FlurryFilterCombineType
-    {
-        Or,
-        And
-    }
-
-    internal struct FlurryFilterData
-    {
-        public string Text;
-        public FlurryFilterCommandType Command;
-        public FlurryFilterCombineType Combine;
-        public bool Not;
-    }
-
+    /// <summary>
+    /// Per-control mutable state for the fast Data Explorer. Instances live in a
+    /// <see cref="ConditionalWeakTable"/> so they never outlive their control.
+    /// </summary>
     internal class FlurryExplorerState
     {
         public FlurryAssetPath Root;
         public FlurryAssetPath SelectedNode;
-        public string PrevFilterText = "";
         public readonly List<FlurryFilterData> Filter = new List<FlurryFilterData>();
         public TaskCompletionSource<bool> ReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool SuppressModified;
         public int Generation;
-        public Func<AssetEntry, bool> EntryFilterFunction = null;
         public ComboBox TypeComboBox;
         public TextBox TypeSearchBox;
         public ProgressBar FilterProgressBar;
@@ -61,17 +38,39 @@ namespace Flurry.Editor.DataExplorer
         public string TypeFilter;
         public bool TypeFilterFromText;
         public List<string> AllTypes = new List<string>();
-        public readonly Dictionary<string, HashSet<string>> TypeDescendants = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        public readonly ConcurrentDictionary<string, HashSet<string>> TypeDescendants = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         public bool UpdatingTypeCombo;
         public readonly HashSet<AssetEntry> BaseEntries = new HashSet<AssetEntry>();
         public int BaseEntryCount;
         public readonly object BaseLock = new object();
         public int SelectGeneration;
         public bool SuppressSelection;
+
+        // Delegates retained so template re-application can unsubscribe stale handlers.
+        public KeyEventHandler FilterKeyDownHandler;
+        public TextChangedEventHandler TypeSearchTextChangedHandler;
+        public KeyEventHandler TypeSearchKeyDownHandler;
+        public EventHandler TypeComboDropDownOpenedHandler;
+        public EventHandler TypeComboDropDownClosedHandler;
+        public SelectionChangedEventHandler TypeComboSelectionChangedHandler;
     }
 
+    /// <summary>
+    /// Tree building, filtering, and selection plumbing for the fast Data Explorer mode.
+    /// The base tree is built on background threads and is never bound to the UI; the UI
+    /// only ever sees filter clones produced by <see cref="FlurryAssetPath.Search"/>. All
+    /// UI-bound mutations happen on the owning control's dispatcher.
+    /// </summary>
     internal static class FlurryExplorerEngine
     {
+        internal static bool FastModeEnabled;
+
+        internal const string AllTypesItem = "All";
+        internal const string RootKeyName = "/";
+        internal const string RootDisplayName = "![root]";
+        internal const string LoadingDisplayName = "[Loading...]";
+        internal const string TypeSearchPartName = "PART_TypeSearchBox";
+
         internal static readonly AccessTools.FieldRef<FrostyDataExplorer, TreeView> AssetTreeViewRef = AccessTools.FieldRefAccess<FrostyDataExplorer, TreeView>("assetTreeView");
         internal static readonly AccessTools.FieldRef<FrostyDataExplorer, ListView> AssetListViewRef = AccessTools.FieldRefAccess<FrostyDataExplorer, ListView>("assetListView");
         internal static readonly AccessTools.FieldRef<FrostyDataExplorer, TextBox> FilterTextBoxRef = AccessTools.FieldRefAccess<FrostyDataExplorer, TextBox>("filterTextBox");
@@ -84,214 +83,66 @@ namespace Flurry.Editor.DataExplorer
             return states.GetOrCreateValue(ctrl);
         }
 
-        internal static void ShowProgress(FlurryExplorerState state, FrostyDataExplorer ctrl)
+        #region Progress indicator
+
+        internal static void SetProgressVisible(FlurryExplorerState state, FrostyDataExplorer ctrl, bool visible)
         {
-            if (state.FilterProgressBar == null || state.FilterInProgressBorder == null) return;
-            ctrl.Dispatcher.Invoke(() =>
+            ctrl.Dispatcher.InvokeAsync(() => ApplyProgressVisibility(state, visible));
+        }
+
+        internal static void SetProgressVisible(FlurryExplorerState state, FrostyDataExplorer ctrl, int generation, bool visible)
+        {
+            ctrl.Dispatcher.InvokeAsync(() =>
             {
-                state.FilterProgressBar.Visibility = Visibility.Visible;
-                state.FilterInProgressBorder.Visibility = Visibility.Visible;
+                // A superseded run must not hide the progress a newer run has shown.
+                if (state.Generation == generation)
+                    ApplyProgressVisibility(state, visible);
             });
         }
 
-        internal static void HideProgress(FlurryExplorerState state, FrostyDataExplorer ctrl)
+        private static void ApplyProgressVisibility(FlurryExplorerState state, bool visible)
         {
-            if (state.FilterProgressBar == null || state.FilterInProgressBorder == null) return;
-            ctrl.Dispatcher.Invoke(() =>
-            {
-                state.FilterProgressBar.Visibility = Visibility.Collapsed;
-                state.FilterInProgressBorder.Visibility = Visibility.Collapsed;
-            });
+            if (state.FilterProgressBar == null || state.FilterInProgressBorder == null)
+                return;
+
+            Visibility visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            state.FilterProgressBar.Visibility = visibility;
+            state.FilterInProgressBorder.Visibility = visibility;
         }
+
+        #endregion
+
+        #region Filter plumbing
 
         internal static HashSet<string> GetTypeDescendants(FlurryExplorerState state, string baseType)
         {
-            HashSet<string> set;
-            if (state.TypeDescendants.TryGetValue(baseType, out set))
-                return set;
-
-            string canonical = baseType;
-            foreach (string typeName in state.AllTypes)
+            return state.TypeDescendants.GetOrAdd(baseType, _ =>
             {
-                if (typeName.Equals(baseType, StringComparison.OrdinalIgnoreCase))
+                string canonical = state.AllTypes.FirstOrDefault(t => t.Equals(baseType, StringComparison.OrdinalIgnoreCase)) ?? baseType;
+
+                var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string typeName in state.AllTypes)
                 {
-                    canonical = typeName;
-                    break;
+                    if (typeName.Equals(canonical, StringComparison.OrdinalIgnoreCase) || TypeLibrary.IsSubClassOf(typeName, canonical))
+                        set.Add(typeName);
                 }
-            }
-
-            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string typeName in state.AllTypes)
-            {
-                if (typeName.Equals(canonical, StringComparison.OrdinalIgnoreCase) || TypeLibrary.IsSubClassOf(typeName, canonical))
-                    set.Add(typeName);
-            }
-            state.TypeDescendants[baseType] = set;
-            return set;
-        }
-
-        private static bool FilterText(FlurryExplorerState state, string inText, AssetEntry inEntry)
-        {
-            string type = inEntry.Type ?? "";
-
-            if (state.Filter.Count == 0)
-                return true;
-
-            bool retCode = false;
-            for (int i = 0; i < state.Filter.Count; i++)
-            {
-                FlurryFilterData filterData = state.Filter[i];
-                bool nextRetCode = EvaluateFilterToken(state, filterData, inText, inEntry, type);
-
-                if (filterData.Not)
-                    nextRetCode = !nextRetCode;
-
-                if (i == 0)
-                    retCode = nextRetCode;
-                else if (filterData.Combine == FlurryFilterCombineType.And)
-                    retCode &= nextRetCode;
-                else
-                    retCode |= nextRetCode;
-            }
-
-            return retCode;
-        }
-
-        private static bool EvaluateFilterToken(FlurryExplorerState state, FlurryFilterData filterData, string inText, AssetEntry inEntry, string type)
-        {
-            bool nextRetCode = false;
-            switch (filterData.Command)
-            {
-                case FlurryFilterCommandType.Contains: nextRetCode = inText.IndexOf(filterData.Text, StringComparison.OrdinalIgnoreCase) >= 0; break;
-                case FlurryFilterCommandType.StartsWith: nextRetCode = inText.StartsWith(filterData.Text, StringComparison.OrdinalIgnoreCase); break;
-                case FlurryFilterCommandType.EndsWith: nextRetCode = inText.EndsWith(filterData.Text, StringComparison.OrdinalIgnoreCase); break;
-                case FlurryFilterCommandType.RegEx: nextRetCode = Regex.IsMatch(inText, filterData.Text); break;
-                case FlurryFilterCommandType.Type: nextRetCode = GetTypeDescendants(state, filterData.Text).Contains(type); break;
-                case FlurryFilterCommandType.Id:
-                    if (inEntry is EbxAssetEntry entry)
-                    {
-                        nextRetCode = entry.Guid.Equals(new Guid(filterData.Text));
-                    }
-                    else
-                    {
-                        if (ulong.TryParse(filterData.Text, System.Globalization.NumberStyles.HexNumber, null, out ulong resRid))
-                            nextRetCode = (inEntry as ResAssetEntry).ResRid == resRid;
-                    }
-                    break;
-                case FlurryFilterCommandType.Hash:
-                    {
-                        if (int.TryParse(filterData.Text, System.Globalization.NumberStyles.HexNumber, null, out int hash))
-                        {
-                            if (inEntry is EbxAssetEntry || inEntry is ResAssetEntry)
-                            {
-                                nextRetCode = Fnv1.HashString(inEntry.Name.ToLower()) == hash;
-                            }
-                        }
-                    }
-                    break;
-            }
-            return nextRetCode;
+                return set;
+            });
         }
 
         internal static void BuildFilterData(FlurryExplorerState state, string filterText, FrostyDataExplorer ctrl)
         {
-            state.Filter.Clear();
-            if (filterText != "")
+            List<FlurryFilterData> tokens;
+            List<List<string>> consumed;
+            if (!FlurryFilterEngine.TryTokenize(filterText, out tokens, out consumed))
             {
-                string[] subStr = filterText.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (subStr.Length == 1 && !subStr[0].Contains(":"))
-                {
-                    state.Filter.Add(new FlurryFilterData()
-                    {
-                        Text = subStr[0],
-                        Command = FlurryFilterCommandType.Contains,
-                        Combine = FlurryFilterCombineType.Or,
-                        Not = false
-                    });
-                    PrevFilterTextRef(ctrl) = filterText;
-                    SyncTypeComboFromFilter(ctrl, state);
-                    return;
-                }
-
-                try
-                {
-                    for (int i = 0; i < subStr.Length; i++)
-                    {
-                        FlurryFilterCommandType command = FlurryFilterCommandType.Contains;
-                        FlurryFilterCombineType combine = FlurryFilterCombineType.Or;
-                        bool not = false;
-
-                        if (state.Filter.Count != 0)
-                            combine = (subStr[i++] == "AND") ? FlurryFilterCombineType.And : FlurryFilterCombineType.Or;
-
-                        if (subStr[i] == "NOT")
-                        {
-                            not = true;
-                            i++;
-                        }
-
-                        string[] cmdArr = subStr[i].Split(new char[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-                        string remaining = "";
-
-                        if (cmdArr.Length > 1)
-                        {
-                            string cmdString = cmdArr[0];
-                            remaining = cmdArr[1];
-                            foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                            {
-                                if (cmdString.StartsWith(value.ToLower()))
-                                {
-                                    command = (FlurryFilterCommandType)Enum.Parse(typeof(FlurryFilterCommandType), value);
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            bool isCommandName = false;
-                            foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                            {
-                                if (subStr[i].Equals(value, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    isCommandName = true;
-                                    break;
-                                }
-                            }
-
-                            if (isCommandName && i + 1 < subStr.Length)
-                            {
-                                foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                                {
-                                    if (subStr[i].Equals(value, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        command = (FlurryFilterCommandType)Enum.Parse(typeof(FlurryFilterCommandType), value);
-                                        break;
-                                    }
-                                }
-                                remaining = subStr[++i];
-                            }
-                            else
-                            {
-                                command = FlurryFilterCommandType.Contains;
-                                remaining = subStr[i];
-                            }
-                        }
-
-                        state.Filter.Add(new FlurryFilterData()
-                        {
-                            Text = remaining,
-                            Command = command,
-                            Combine = combine,
-                            Not = not
-                        });
-                    }
-                }
-                catch (Exception)
-                {
-                    FilterTextBoxRef(ctrl).Text = "";
-                    state.Filter.Clear();
-                }
+                TextBox filterTextBox = FilterTextBoxRef(ctrl);
+                if (filterTextBox != null)
+                    filterTextBox.Text = "";
             }
+
+            state.Filter.Clear();
+            state.Filter.AddRange(tokens);
             PrevFilterTextRef(ctrl) = filterText;
             SyncTypeComboFromFilter(ctrl, state);
         }
@@ -300,19 +151,19 @@ namespace Flurry.Editor.DataExplorer
         {
             string firstType = null;
             int typeCount = 0;
-            List<FlurryFilterData> kept = new List<FlurryFilterData>();
+            var kept = new List<FlurryFilterData>();
 
-            foreach (FlurryFilterData f in state.Filter)
+            foreach (FlurryFilterData token in state.Filter)
             {
-                if (f.Command == FlurryFilterCommandType.Type && !f.Not)
+                if (token.Command == FlurryFilterCommandType.Type && !token.Not)
                 {
                     typeCount++;
                     if (typeCount == 1)
-                        firstType = f.Text;
+                        firstType = token.Text;
                 }
                 else
                 {
-                    kept.Add(f);
+                    kept.Add(token);
                 }
             }
 
@@ -322,144 +173,49 @@ namespace Flurry.Editor.DataExplorer
                 state.Filter.AddRange(kept);
                 state.TypeFilter = firstType;
                 state.TypeFilterFromText = true;
-                SetTypeComboDisplay(state, firstType);
-                return;
+                SelectTypeComboItem(state, firstType);
             }
-
-            if (typeCount > 1)
+            else if (typeCount > 1)
             {
                 state.TypeFilter = null;
                 state.TypeFilterFromText = false;
-                SetTypeComboDisplay(state, "All");
-                return;
+                SelectTypeComboItem(state, AllTypesItem);
             }
-
-            if (state.TypeFilterFromText)
+            else if (state.TypeFilterFromText)
             {
                 state.TypeFilter = null;
                 state.TypeFilterFromText = false;
-                SetTypeComboDisplay(state, "All");
+                SelectTypeComboItem(state, AllTypesItem);
             }
         }
 
         internal static void StripPlainTypeTokens(FrostyDataExplorer ctrl, FlurryExplorerState state)
         {
             TextBox filterTextBox = FilterTextBoxRef(ctrl);
-            if (filterTextBox == null) return;
-
-            string filterText = filterTextBox.Text ?? "";
-            if (filterText == "") return;
-
-            string[] subStr = filterText.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (subStr.Length == 1 && !subStr[0].Contains(":"))
+            string filterText = filterTextBox?.Text ?? "";
+            if (filterText == "")
                 return;
 
-            var entries = new List<KeyValuePair<FlurryFilterData, List<string>>>();
-            try
-            {
-                for (int i = 0; i < subStr.Length; i++)
-                {
-                    FlurryFilterCommandType command = FlurryFilterCommandType.Contains;
-                    FlurryFilterCombineType combine = FlurryFilterCombineType.Or;
-                    bool not = false;
-                    List<string> consumed = new List<string>();
-
-                    if (entries.Count != 0)
-                    {
-                        consumed.Add(subStr[i]);
-                        combine = (subStr[i++] == "AND") ? FlurryFilterCombineType.And : FlurryFilterCombineType.Or;
-                    }
-
-                    if (subStr[i] == "NOT")
-                    {
-                        not = true;
-                        consumed.Add(subStr[i]);
-                        i++;
-                    }
-
-                    consumed.Add(subStr[i]);
-                    string[] cmdArr = subStr[i].Split(new char[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-                    string remaining = "";
-
-                    if (cmdArr.Length > 1)
-                    {
-                        string cmdString = cmdArr[0];
-                        remaining = cmdArr[1];
-                        foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                        {
-                            if (cmdString.StartsWith(value.ToLower()))
-                            {
-                                command = (FlurryFilterCommandType)Enum.Parse(typeof(FlurryFilterCommandType), value);
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        bool isCommandName = false;
-                        foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                        {
-                            if (subStr[i].Equals(value, StringComparison.OrdinalIgnoreCase))
-                            {
-                                isCommandName = true;
-                                break;
-                            }
-                        }
-
-                        if (isCommandName && i + 1 < subStr.Length)
-                        {
-                            foreach (string value in Enum.GetNames(typeof(FlurryFilterCommandType)))
-                            {
-                                if (subStr[i].Equals(value, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    command = (FlurryFilterCommandType)Enum.Parse(typeof(FlurryFilterCommandType), value);
-                                    break;
-                                }
-                            }
-                            i++;
-                            remaining = subStr[i];
-                            consumed.Add(subStr[i]);
-                        }
-                        else
-                        {
-                            command = FlurryFilterCommandType.Contains;
-                            remaining = subStr[i];
-                        }
-                    }
-
-                    entries.Add(new KeyValuePair<FlurryFilterData, List<string>>(
-                        new FlurryFilterData { Text = remaining, Command = command, Combine = combine, Not = not },
-                        consumed));
-                }
-            }
-            catch (Exception)
-            {
+            List<FlurryFilterData> tokens;
+            List<List<string>> consumed;
+            if (!FlurryFilterEngine.TryTokenize(filterText, out tokens, out consumed))
                 return;
-            }
 
-            bool hasPlainType = false;
-            foreach (var entry in entries)
-            {
-                if (entry.Key.Command == FlurryFilterCommandType.Type && !entry.Key.Not)
-                {
-                    hasPlainType = true;
-                    break;
-                }
-            }
+            bool hasPlainType = tokens.Any(t => t.Command == FlurryFilterCommandType.Type && !t.Not);
             if (!hasPlainType)
                 return;
 
-            var keptTokens = new List<string>();
-            foreach (var entry in entries)
+            var keptWords = new List<string>();
+            for (int i = 0; i < tokens.Count; i++)
             {
-                if (!(entry.Key.Command == FlurryFilterCommandType.Type && !entry.Key.Not))
-                    keptTokens.AddRange(entry.Value);
+                if (!(tokens[i].Command == FlurryFilterCommandType.Type && !tokens[i].Not))
+                    keptWords.AddRange(consumed[i]);
             }
 
-            while (keptTokens.Count > 0 && keptTokens[0].Equals("AND", StringComparison.OrdinalIgnoreCase))
-                keptTokens.RemoveAt(0);
+            while (keptWords.Count > 0 && keptWords[0].Equals(FlurryFilterEngine.AndToken, StringComparison.OrdinalIgnoreCase))
+                keptWords.RemoveAt(0);
 
-            string newText = string.Join(" ", keptTokens);
+            string newText = string.Join(" ", keptWords);
             if (newText == filterText)
                 return;
 
@@ -467,31 +223,65 @@ namespace Flurry.Editor.DataExplorer
             BuildFilterData(state, newText, ctrl);
         }
 
-        private static void SetTypeComboDisplay(FlurryExplorerState state, string target)
+        #endregion
+
+        #region Type combo box
+
+        internal static List<string> BuildTypeList(FlurryExplorerState state, string searchText)
+        {
+            var result = new List<string> { AllTypesItem };
+
+            if (string.IsNullOrWhiteSpace(searchText) || searchText.Equals(AllTypesItem, StringComparison.OrdinalIgnoreCase))
+            {
+                result.AddRange(state.AllTypes);
+                return result;
+            }
+
+            var startsWith = new List<string>();
+            var contains = new List<string>();
+            foreach (string type in state.AllTypes)
+            {
+                int index = type.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+                if (index == 0)
+                    startsWith.Add(type);
+                else if (index > 0)
+                    contains.Add(type);
+            }
+
+            startsWith.Sort(StringComparer.OrdinalIgnoreCase);
+            contains.Sort(StringComparer.OrdinalIgnoreCase);
+            result.AddRange(startsWith);
+            result.AddRange(contains);
+            return result;
+        }
+
+        private static bool SelectTypeComboItem(FlurryExplorerState state, string target)
         {
             ComboBox combo = state.TypeComboBox;
             if (combo == null)
-                return;
+                return false;
 
             state.UpdatingTypeCombo = true;
             try
             {
-                if (combo.SelectedItem as string != target)
-                {
-                    bool present = false;
-                    foreach (object item in combo.Items)
-                    {
-                        if (string.Equals(item as string, target, StringComparison.OrdinalIgnoreCase))
-                        {
-                            present = true;
-                            break;
-                        }
-                    }
-                    if (!present)
-                        combo.ItemsSource = BuildTypeList(state, "");
+                if (combo.SelectedItem as string == target)
+                    return true;
 
-                    combo.SelectedItem = target;
+                bool present = false;
+                foreach (object item in combo.Items)
+                {
+                    if (string.Equals(item as string, target, StringComparison.OrdinalIgnoreCase))
+                    {
+                        present = true;
+                        break;
+                    }
                 }
+
+                if (!present)
+                    combo.ItemsSource = BuildTypeList(state, "");
+
+                combo.SelectedItem = target;
+                return true;
             }
             finally
             {
@@ -499,34 +289,106 @@ namespace Flurry.Editor.DataExplorer
             }
         }
 
-        internal static void ClearTypeFilter(FrostyDataExplorer ctrl, FlurryExplorerState state)
+        internal static void ClearTypeFilter(FlurryExplorerState state)
         {
             state.TypeFilter = null;
             state.TypeFilterFromText = false;
+            SelectTypeComboItem(state, AllTypesItem);
+        }
 
+        internal static void WireTypeComboBox(FrostyDataExplorer ctrl, FlurryExplorerState state)
+        {
             ComboBox combo = state.TypeComboBox;
             if (combo == null)
+                return;
+
+            // DropDownOpened/DropDownClosed are field-like CLR events (null-tolerant -=);
+            // SelectionChanged is routed and must go through Unsubscribe.
+            combo.DropDownOpened -= state.TypeComboDropDownOpenedHandler;
+            combo.DropDownClosed -= state.TypeComboDropDownClosedHandler;
+            Unsubscribe(combo, Selector.SelectionChangedEvent, state.TypeComboSelectionChangedHandler);
+
+            state.TypeComboDropDownOpenedHandler = (sender, e) =>
+            {
+                if (state.UpdatingTypeCombo)
+                    return;
+                InitTypeSearchBox(state);
+                ResetTypeSearch(state);
+            };
+
+            state.TypeComboDropDownClosedHandler = (sender, e) =>
+            {
+                if (state.UpdatingTypeCombo)
+                    return;
+                state.UpdatingTypeCombo = true;
+                try
+                {
+                    object selected = combo.SelectedItem;
+                    combo.ItemsSource = BuildTypeList(state, "");
+                    if (selected != null)
+                        combo.SelectedItem = selected;
+                }
+                finally
+                {
+                    state.UpdatingTypeCombo = false;
+                }
+            };
+
+            state.TypeComboSelectionChangedHandler = (sender, e) =>
+            {
+                if (state.UpdatingTypeCombo)
+                    return;
+
+                string selected = combo.SelectedItem as string;
+                if (selected == null)
+                    return;
+
+                state.TypeFilter = selected == AllTypesItem ? null : selected;
+                state.TypeFilterFromText = false;
+                StripPlainTypeTokens(ctrl, state);
+                UpdateTreeViewAsync(ctrl, state);
+            };
+
+            combo.DropDownOpened += state.TypeComboDropDownOpenedHandler;
+            combo.DropDownClosed += state.TypeComboDropDownClosedHandler;
+            combo.SelectionChanged += state.TypeComboSelectionChangedHandler;
+        }
+
+        private static void InitTypeSearchBox(FlurryExplorerState state)
+        {
+            ComboBox combo = state.TypeComboBox;
+            TextBox searchBox = combo?.Template?.FindName(TypeSearchPartName, combo) as TextBox;
+            if (searchBox == null || ReferenceEquals(state.TypeSearchBox, searchBox))
+                return;
+
+            if (state.TypeSearchBox != null)
+            {
+                Unsubscribe(state.TypeSearchBox, TextBoxBase.TextChangedEvent, state.TypeSearchTextChangedHandler);
+                Unsubscribe(state.TypeSearchBox, UIElement.PreviewKeyDownEvent, state.TypeSearchKeyDownHandler);
+            }
+
+            state.TypeSearchBox = searchBox;
+            state.TypeSearchTextChangedHandler = (sender, e) => SearchTypeList(state);
+            state.TypeSearchKeyDownHandler = (sender, e) => HandleTypeSearchKeyDown(combo, searchBox, e);
+
+            searchBox.TextChanged += state.TypeSearchTextChangedHandler;
+            searchBox.PreviewKeyDown += state.TypeSearchKeyDownHandler;
+        }
+
+        private static void ResetTypeSearch(FlurryExplorerState state)
+        {
+            ComboBox combo = state.TypeComboBox;
+            TextBox searchBox = state.TypeSearchBox;
+            if (combo == null || searchBox == null)
                 return;
 
             state.UpdatingTypeCombo = true;
             try
             {
-                if (combo.SelectedItem as string != "All")
-                {
-                    bool present = false;
-                    foreach (object item in combo.Items)
-                    {
-                        if (string.Equals(item as string, "All", StringComparison.OrdinalIgnoreCase))
-                        {
-                            present = true;
-                            break;
-                        }
-                    }
-                    if (!present)
-                        combo.ItemsSource = BuildTypeList(state, "");
-
-                    combo.SelectedItem = "All";
-                }
+                searchBox.Text = "";
+                combo.ItemsSource = BuildTypeList(state, "");
+                searchBox.Focus();
+                searchBox.CaretIndex = 0;
             }
             finally
             {
@@ -534,15 +396,116 @@ namespace Flurry.Editor.DataExplorer
             }
         }
 
+        private static void SearchTypeList(FlurryExplorerState state)
+        {
+            ComboBox combo = state.TypeComboBox;
+            TextBox searchBox = state.TypeSearchBox;
+            if (combo == null || searchBox == null || state.UpdatingTypeCombo)
+                return;
+
+            state.UpdatingTypeCombo = true;
+            try
+            {
+                combo.ItemsSource = BuildTypeList(state, searchBox.Text);
+            }
+            finally
+            {
+                state.UpdatingTypeCombo = false;
+            }
+        }
+
+        private static void HandleTypeSearchKeyDown(ComboBox combo, TextBox searchBox, KeyEventArgs e)
+        {
+            switch (e.Key)
+            {
+                case Key.Down:
+                case Key.Up:
+                    MoveTypeComboSelection(combo, searchBox, e.Key == Key.Down ? 1 : -1);
+                    e.Handled = true;
+                    break;
+                case Key.Enter:
+                    if (combo.SelectedItem != null)
+                        combo.IsDropDownOpen = false;
+                    e.Handled = true;
+                    break;
+                case Key.Escape:
+                    combo.IsDropDownOpen = false;
+                    e.Handled = true;
+                    break;
+            }
+        }
+
+        private static void MoveTypeComboSelection(ComboBox combo, TextBox searchBox, int delta)
+        {
+            int count = combo.Items.Count;
+            if (count == 0)
+                return;
+
+            bool hasSearchText = !string.IsNullOrEmpty(searchBox.Text) && !searchBox.Text.Equals(AllTypesItem, StringComparison.OrdinalIgnoreCase);
+            int index = combo.SelectedIndex;
+            if (index < 0)
+                index = delta > 0 && hasSearchText && count > 1 ? 1 : 0;
+            else
+                index += delta;
+
+            index = Math.Max(0, Math.Min(index, count - 1));
+            combo.SelectedIndex = index;
+
+            ComboBoxItem container = combo.ItemContainerGenerator.ContainerFromIndex(index) as ComboBoxItem;
+            container?.BringIntoView();
+        }
+
+        /// <summary>
+        /// Removes a previously added routed-event handler. WPF's routed-event remove
+        /// accessors delegate to <see cref="UIElement.RemoveHandler"/>, which throws on a
+        /// null handler - unlike field-like CLR events whose -= is null-tolerant. First-time
+        /// wiring passes null (nothing to remove), so this must guard.
+        /// </summary>
+        private static void Unsubscribe(UIElement element, RoutedEvent routedEvent, Delegate handler)
+        {
+            if (handler != null)
+                element.RemoveHandler(routedEvent, handler);
+        }
+
+        internal static void WireFilterTextBox(TextBox filterBox, FlurryExplorerState state)
+        {
+            Unsubscribe(filterBox, UIElement.KeyDownEvent, state.FilterKeyDownHandler);
+
+            state.FilterKeyDownHandler = (sender, e) =>
+            {
+                if (Keyboard.Modifiers != ModifierKeys.None)
+                    return;
+
+                if (e.Key == Key.Up)
+                {
+                    filterBox.CaretIndex = 0;
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Down)
+                {
+                    filterBox.CaretIndex = filterBox.Text.Length;
+                    e.Handled = true;
+                }
+            };
+
+            filterBox.AddHandler(UIElement.KeyDownEvent, state.FilterKeyDownHandler, true);
+        }
+
+        #endregion
+
+        #region Tree building and filtering
+
         private static Func<AssetEntry, bool> CreateAssetFilter(FrostyDataExplorer ctrl, FlurryExplorerState state)
         {
+            // Capture UI state here (UI thread); the returned predicate is evaluated on background threads.
             bool showOnlyModified = ctrl.ShowOnlyModified;
             bool showOnlyUnmodified = FlurryExplorerBehaviors.GetShowOnlyUnModified(ctrl);
             bool showOnlyUnsavedModified = FlurryExplorerBehaviors.GetShowOnlyUnsavedModified(ctrl);
             bool showOnlyAdded = FlurryExplorerBehaviors.GetShowOnlyAdded(ctrl);
             HashSet<string> typeFilterSet = string.IsNullOrEmpty(state.TypeFilter) ? null : GetTypeDescendants(state, state.TypeFilter);
+            List<FlurryFilterData> filterSnapshot = state.Filter.ToList();
 
-            return (entry) =>
+            return entry =>
             {
                 if (entry == null)
                     return false;
@@ -562,28 +525,28 @@ namespace Flurry.Editor.DataExplorer
                 if (typeFilterSet != null && !typeFilterSet.Contains(entry.Type ?? ""))
                     return false;
 
-                return FilterText(state, entry.Name, entry);
+                return FlurryFilterEngine.Matches(filterSnapshot, entry.Name, entry, state);
             };
         }
 
         internal static Task CreateAssetPathMappingAsync(FrostyDataExplorer ctrl, FlurryExplorerState state)
         {
             TreeView treeView = AssetTreeViewRef(ctrl);
-            if (treeView == null) return Task.CompletedTask;
             IEnumerable items = ctrl.ItemsSource;
-            if (items == null) return Task.CompletedTask;
+            if (treeView == null || items == null)
+                return Task.CompletedTask;
 
-            FlurryAssetPath dummyNode = new FlurryAssetPath("[Loading...]", "", null);
-            state.Root = new FlurryAssetPath("", "", null);
-            state.Root.VisibleChildren.Add(dummyNode);
-            treeView.ItemsSource = state.Root.VisibleChildren;
+            // Show a placeholder immediately so the tree does not appear frozen while building.
+            var placeholder = new FlurryAssetPath("", "", null);
+            placeholder.VisibleChildren.Add(new FlurryAssetPath(LoadingDisplayName, "", null));
+            state.Root = placeholder;
+            treeView.ItemsSource = placeholder.VisibleChildren;
 
             return Task.Run(async () =>
             {
+                int generation = state.Generation;
                 try
                 {
-                    int generation = state.Generation;
-
                     lock (state.BaseLock)
                     {
                         BuildBaseTree(state, items);
@@ -612,14 +575,13 @@ namespace Flurry.Editor.DataExplorer
         {
             FlurryAssetPath oldBase = state.Root;
 
-            FlurryAssetPath newBase = new FlurryAssetPath("", "", null);
-            FlurryAssetPath rootPath = new FlurryAssetPath("![root]", "", null, true);
-            newBase.Children.Add("/", rootPath);
+            var newBase = new FlurryAssetPath("", "", null);
+            var rootPath = new FlurryAssetPath(RootDisplayName, "", null, true);
+            newBase.Children.Add(RootKeyName, rootPath);
 
             var seenEntries = new HashSet<AssetEntry>();
             foreach (AssetEntry entry in items)
             {
-                if (state.EntryFilterFunction != null && !state.EntryFilterFunction(entry)) { continue; }
                 seenEntries.Add(entry);
                 InsertEntry(state, newBase, rootPath, entry);
             }
@@ -635,24 +597,22 @@ namespace Flurry.Editor.DataExplorer
 
         private static void InsertEntry(FlurryExplorerState state, FlurryAssetPath root, FlurryAssetPath rootPath, AssetEntry entry)
         {
-            var parts = entry.Path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = entry.Path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
             FlurryAssetPath current = parts.Length > 0 ? root : rootPath;
 
-            foreach (var part in parts)
+            foreach (string part in parts)
             {
-                FlurryAssetPath next;
-                if (!current.Children.TryGetValue(part, out next))
+                if (!current.Children.TryGetValue(part, out FlurryAssetPath next))
                 {
                     next = new FlurryAssetPath(part, "", current);
                     current.Children[part] = next;
 
                     if (current.VisibleChildren.Count == 0)
-                        current.VisibleChildren.Add(new FlurryAssetPath("[Loading...]", "", null));
+                        current.VisibleChildren.Add(new FlurryAssetPath(LoadingDisplayName, "", null));
                 }
-                else
+                else if (part.Any(char.IsUpper))
                 {
-                    if (part.ToCharArray().Any(char.IsUpper))
-                        next.UpdatePathName(part);
+                    next.UpdatePathName(part);
                 }
 
                 current = next;
@@ -661,15 +621,20 @@ namespace Flurry.Editor.DataExplorer
             current.Entries.Add(entry);
         }
 
+        /// <summary>
+        /// Carries the previous base tree's clone links onto a freshly built base tree so
+        /// expanded/selected visual state survives full rebuilds.
+        /// </summary>
         private static void GraftCloneLinks(FlurryAssetPath oldNode, FlurryAssetPath newNode)
         {
-            if (oldNode == null) return;
+            if (oldNode == null)
+                return;
+
             newNode.Clone = oldNode.Clone;
-            foreach (var kvp in newNode.Children)
+            foreach (KeyValuePair<string, FlurryAssetPath> pair in newNode.Children)
             {
-                FlurryAssetPath oldChild;
-                if (oldNode.Children.TryGetValue(kvp.Key, out oldChild))
-                    GraftCloneLinks(oldChild, kvp.Value);
+                if (oldNode.Children.TryGetValue(pair.Key, out FlurryAssetPath oldChild))
+                    GraftCloneLinks(oldChild, pair.Value);
             }
         }
 
@@ -685,7 +650,6 @@ namespace Flurry.Editor.DataExplorer
             int count = 0;
             foreach (AssetEntry entry in items)
             {
-                if (state.EntryFilterFunction != null && !state.EntryFilterFunction(entry)) { continue; }
                 count++;
                 if (!state.BaseEntries.Contains(entry))
                 {
@@ -701,68 +665,51 @@ namespace Flurry.Editor.DataExplorer
                 return;
             }
 
-            if (newEntries != null)
-            {
-                FlurryAssetPath rootPath;
-                if (!state.Root.Children.TryGetValue("/", out rootPath))
-                {
-                    rootPath = new FlurryAssetPath("![root]", "", null, true);
-                    state.Root.Children.Add("/", rootPath);
-                }
+            if (newEntries == null)
+                return;
 
-                foreach (AssetEntry entry in newEntries)
-                {
-                    InsertEntry(state, state.Root, rootPath, entry);
-                    state.BaseEntries.Add(entry);
-                }
-                state.BaseEntryCount = count;
+            if (!state.Root.Children.TryGetValue(RootKeyName, out FlurryAssetPath rootPath))
+            {
+                rootPath = new FlurryAssetPath(RootDisplayName, "", null, true);
+                state.Root.Children.Add(RootKeyName, rootPath);
             }
+
+            foreach (AssetEntry entry in newEntries)
+            {
+                InsertEntry(state, state.Root, rootPath, entry);
+                state.BaseEntries.Add(entry);
+            }
+            state.BaseEntryCount = count;
         }
 
         internal static Task UpdateTreeViewAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, bool keepVisualState = true, bool showProgressBar = true, bool rebuildBase = true, bool forceFullRebuild = false)
         {
             TreeView treeView = AssetTreeViewRef(ctrl);
-            if (treeView == null)
+            if (treeView == null || ctrl.ItemsSource == null)
                 return Task.CompletedTask;
 
-            if (!rebuildBase && (state.Root == null || state.Root.IsLazyLoaded == false))
+            if (!rebuildBase && (state.Root == null || !state.Root.IsLazyLoaded))
                 return Task.CompletedTask;
 
             if (!keepVisualState && state.SelectedNode != null)
                 state.SelectedNode.IsSelected = false;
 
-            if (ctrl.ItemsSource == null)
-                return Task.CompletedTask;
-
             IEnumerable items = ctrl.ItemsSource;
-            var ShouldDisplayAsset = CreateAssetFilter(ctrl, state);
+            Func<AssetEntry, bool> shouldDisplayAsset = CreateAssetFilter(ctrl, state);
             int generation = ++state.Generation;
 
             return Task.Run(async () =>
             {
                 try
                 {
-                    if (showProgressBar)
-                    {
-                        ShowProgress(state, ctrl);
-                    }
+                    SetProgressVisible(state, ctrl, generation, true);
 
-                    FlurryAssetPath newRoot = null;
-
-                    if (rebuildBase)
+                    FlurryAssetPath newRoot;
+                    lock (state.BaseLock)
                     {
-                        lock (state.BaseLock)
-                        {
+                        if (rebuildBase)
                             SyncBaseTree(state, items, forceFullRebuild);
-                            newRoot = state.Root.Search(ShouldDisplayAsset, keepVisualState);
-                        }
-                    }
-                    else
-                    {
-                        lock (state.BaseLock)
-                        {
-                            newRoot = state.Root.Search(ShouldDisplayAsset, keepVisualState);
-                        }
+                        newRoot = state.Root?.Search(shouldDisplayAsset, keepVisualState);
                     }
 
                     newRoot?.LazyLoadChildren();
@@ -770,65 +717,7 @@ namespace Flurry.Editor.DataExplorer
                     if (generation != state.Generation)
                         return;
 
-                    await ctrl.Dispatcher.InvokeAsync(() =>
-                    {
-                        if (generation != state.Generation)
-                            return;
-
-                        string selectedFullPath = state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null;
-
-                        state.SuppressSelection = true;
-                        try
-                        {
-                            treeView.SelectedValuePath = string.Empty;
-                            treeView.ItemsSource = newRoot?.VisibleChildren;
-                            treeView.Items.Refresh();
-
-                            FlurryAssetPath selectedNode = null;
-                            if (newRoot != null && !string.IsNullOrEmpty(selectedFullPath))
-                            {
-                                if (selectedFullPath == "![root]")
-                                {
-                                    FlurryAssetPath rootPath;
-                                    if (newRoot.Children.TryGetValue("/", out rootPath))
-                                        selectedNode = rootPath;
-                                }
-                                else
-                                {
-                                    FlurryAssetPath cur = newRoot;
-                                    foreach (string seg in selectedFullPath.Split('/'))
-                                    {
-                                        FlurryAssetPath next;
-                                        if (cur == null || !cur.Children.TryGetValue(seg, out next))
-                                        {
-                                            cur = null;
-                                            break;
-                                        }
-                                        cur = next;
-                                    }
-                                    selectedNode = cur;
-                                }
-                            }
-
-                            if (selectedNode != null)
-                            {
-                                state.SelectedNode = selectedNode;
-                                selectedNode.IsSelected = true;
-                                ctrl.SelectedPath = selectedNode.IsRoot ? "" : selectedNode.FullPath;
-                                UpdateListViewAsync(ctrl, state, selectedNode, true);
-                            }
-                            else
-                            {
-                                state.SelectedNode = null;
-                                ctrl.SelectedPath = "";
-                                UpdateListViewAsync(ctrl, state, null, true);
-                            }
-                        }
-                        finally
-                        {
-                            state.SuppressSelection = false;
-                        }
-                    });
+                    await ctrl.Dispatcher.InvokeAsync(() => ApplyTreeViewResult(ctrl, state, treeView, newRoot, generation));
                 }
                 catch (Exception ex)
                 {
@@ -836,21 +725,69 @@ namespace Flurry.Editor.DataExplorer
                 }
                 finally
                 {
-                    if (showProgressBar)
-                    {
-                        HideProgress(state, ctrl);
-                    }
+                    SetProgressVisible(state, ctrl, generation, false);
                 }
             });
+        }
+
+        private static void ApplyTreeViewResult(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, FlurryAssetPath newRoot, int generation)
+        {
+            if (generation != state.Generation)
+                return;
+
+            string selectedFullPath = state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null;
+
+            state.SuppressSelection = true;
+            try
+            {
+                treeView.SelectedValuePath = string.Empty;
+                treeView.ItemsSource = newRoot?.VisibleChildren;
+                treeView.Items.Refresh();
+
+                FlurryAssetPath selectedNode = FindNodeByPath(newRoot, selectedFullPath);
+                if (selectedNode != null)
+                {
+                    state.SelectedNode = selectedNode;
+                    selectedNode.IsSelected = true;
+                    ctrl.SelectedPath = selectedNode.IsRoot ? "" : selectedNode.FullPath;
+                }
+                else
+                {
+                    state.SelectedNode = null;
+                    ctrl.SelectedPath = "";
+                }
+
+                UpdateListViewAsync(ctrl, state, selectedNode, true);
+            }
+            finally
+            {
+                state.SuppressSelection = false;
+            }
+        }
+
+        private static FlurryAssetPath FindNodeByPath(FlurryAssetPath root, string fullPath)
+        {
+            if (root == null || string.IsNullOrEmpty(fullPath))
+                return null;
+
+            if (fullPath == RootDisplayName)
+                return root.Children.TryGetValue(RootKeyName, out FlurryAssetPath rootPath) ? rootPath : null;
+
+            FlurryAssetPath current = root;
+            foreach (string segment in fullPath.Split('/'))
+            {
+                if (!current.Children.TryGetValue(segment, out current))
+                    return null;
+            }
+            return current;
         }
 
         internal static Task UpdateListViewAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, FlurryAssetPath path = null, bool suppressSelectionEvents = false)
         {
             ListView assetListView = AssetListViewRef(ctrl);
             if (assetListView == null)
-            {
                 return Task.CompletedTask;
-            }
+
             if (path == null)
             {
                 assetListView.ItemsSource = null;
@@ -871,10 +808,8 @@ namespace Flurry.Editor.DataExplorer
                     }
                     else if (ctrl.SelectedAssets != null)
                     {
-                        foreach (var item in ctrl.SelectedAssets)
-                        {
-                            assetListView.SelectedItems.Add(item);
-                        }
+                        foreach (AssetEntry entry in ctrl.SelectedAssets)
+                            assetListView.SelectedItems.Add(entry);
                     }
                 }
                 finally
@@ -885,13 +820,37 @@ namespace Flurry.Editor.DataExplorer
             }, DispatcherPriority.Background).Task;
         }
 
+        internal static void ConfigureVirtualization(FrostyDataExplorer ctrl)
+        {
+            TreeView assetTreeView = AssetTreeViewRef(ctrl);
+            if (assetTreeView != null)
+            {
+                assetTreeView.SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
+                assetTreeView.SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
+                assetTreeView.SetValue(ScrollViewer.CanContentScrollProperty, true);
+            }
+
+            ListView assetListView = AssetListViewRef(ctrl);
+            if (assetListView != null)
+            {
+                assetListView.SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
+                assetListView.SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
+                assetListView.SetValue(ScrollViewer.CanContentScrollProperty, true);
+            }
+        }
+
+        #endregion
+
+        #region Selection
+
         internal static async Task SelectAssetAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, AssetEntry entry, bool clearFilters = true)
         {
             state.SelectGeneration++;
             int selectGen = state.SelectGeneration;
 
             await state.ReadyTcs.Task;
-            if (state.SelectGeneration != selectGen) return;
+            if (state.SelectGeneration != selectGen)
+                return;
 
             TreeView treeView = AssetTreeViewRef(ctrl);
             if (treeView == null)
@@ -912,7 +871,7 @@ namespace Flurry.Editor.DataExplorer
                 try
                 {
                     state.SuppressModified = true;
-                    ShowProgress(state, ctrl);
+                    SetProgressVisible(state, ctrl, true);
 
                     bool anyShowFlags =
                         ctrl.ShowOnlyModified ||
@@ -920,137 +879,37 @@ namespace Flurry.Editor.DataExplorer
                         FlurryExplorerBehaviors.GetShowOnlyUnsavedModified(ctrl) ||
                         FlurryExplorerBehaviors.GetShowOnlyAdded(ctrl);
 
-                    if (clearFilters && (anyShowFlags || state.PrevFilterText != ""))
+                    if (clearFilters && (anyShowFlags || PrevFilterTextRef(ctrl) != ""))
                     {
-                        ctrl.SetValue(FrostyDataExplorer.ShowOnlyModifiedProperty, false);
-                        FlurryExplorerBehaviors.SetShowOnlyUnModified(ctrl, false);
-                        FlurryExplorerBehaviors.SetShowOnlyUnsavedModified(ctrl, false);
-                        FlurryExplorerBehaviors.SetShowOnlyAdded(ctrl, false);
-
-                        TextBox filterTextBox = FilterTextBoxRef(ctrl);
-                        if (state.PrevFilterText != "")
-                        {
-                            filterTextBox.Text = "";
-                            state.PrevFilterText = "";
-                            BuildFilterData(state, "", ctrl);
-                        }
-
-                        ClearTypeFilter(ctrl, state);
-
-                        await UpdateTreeViewAsync(ctrl, state, false, false);
-                        if (state.SelectGeneration != selectGen) return;
-                        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                        if (state.SelectGeneration != selectGen) return;
+                        await ClearFiltersForSelectionAsync(ctrl, state, selectGen);
+                        if (state.SelectGeneration != selectGen)
+                            return;
                     }
 
-                    string[] pathSegments = entry.Path.Length > 0
-                        ? entry.Path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
-                        : new string[1] { "/" };
+                    List<FlurryAssetPath> traversalStack = ResolveTraversalStack(state, entry);
+                    TreeViewItem container = await RevealPathAsync(ctrl, state, treeView, traversalStack, selectGen);
+                    if (state.SelectGeneration != selectGen)
+                        return;
 
-                    List<FlurryAssetPath> traversalStack = new List<FlurryAssetPath>();
-                    lock (state.BaseLock)
+                    if (container == null && traversalStack.Count > 1)
+                        container = WalkRealizedContainers(state, treeView, traversalStack);
+                    if (state.SelectGeneration != selectGen)
+                        return;
+
+                    if (container != null)
                     {
-                        FlurryAssetPath cursor = state.Root;
-                        if (cursor != null)
-                            traversalStack.Add(cursor);
-
-                        foreach (string segment in pathSegments)
-                        {
-                            FlurryAssetPath next;
-                            if (cursor != null && cursor.Children.TryGetValue(segment, out next))
-                            {
-                                cursor = next;
-                                traversalStack.Add(cursor);
-                            }
-                            else
-                            {
-                                break;
-                            }
-                        }
-                    }
-
-                    TreeViewItem tvi = null;
-                    foreach (var node in traversalStack.Skip(1))
-                    {
-                        FlurryAssetPath target;
-                        lock (state.BaseLock)
-                        {
-                            target = node.Clone != null ? node.Clone : node;
-                            target.LazyLoadChildren();
-                        }
-
-                        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                        if (state.SelectGeneration != selectGen) return;
-
-                        if (tvi != null)
-                        {
-                            tvi.IsExpanded = true;
-                            tvi.UpdateLayout();
-                            await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                            if (state.SelectGeneration != selectGen) return;
-
-                            await ForceRealizeItem(tvi, target, state, selectGen);
-                            if (state.SelectGeneration != selectGen) return;
-                            tvi = await GetContainerFromItemAsync<TreeViewItem>(tvi, target, state, selectGen);
-                            if (state.SelectGeneration != selectGen) return;
-                        }
-                        else if (node.Parent == state.Root)
-                        {
-                            await ForceRealizeItem(treeView, target, state, selectGen);
-                            if (state.SelectGeneration != selectGen) return;
-                            tvi = await GetContainerFromItemAsync<TreeViewItem>(treeView, target, state, selectGen);
-                            if (state.SelectGeneration != selectGen) return;
-                        }
-                    }
-
-                    if (tvi == null && traversalStack.Count > 1 && state.SelectGeneration == selectGen)
-                    {
-                        foreach (var node in traversalStack.Skip(1))
-                        {
-                            FlurryAssetPath target;
-                            lock (state.BaseLock)
-                            {
-                                target = node.Clone != null ? node.Clone : node;
-                            }
-
-                            TreeViewItem container = tvi == null
-                                ? treeView.ItemContainerGenerator.ContainerFromItem(target) as TreeViewItem
-                                : tvi.ItemContainerGenerator.ContainerFromItem(target) as TreeViewItem;
-                            if (container == null)
-                                break;
-
-                            container.IsExpanded = true;
-                            container.UpdateLayout();
-                            tvi = container;
-                        }
-
-                        if (tvi != null && state.SelectGeneration == selectGen)
-                        {
-                            tvi.UpdateLayout();
-                            state.SuppressSelection = true;
-                            try { tvi.IsSelected = true; }
-                            finally { state.SuppressSelection = false; }
-                            tvi.BringIntoView();
-                        }
-                    }
-
-                    if (tvi != null && state.SelectGeneration == selectGen)
-                    {
-                        tvi.UpdateLayout();
+                        container.UpdateLayout();
                         state.SuppressSelection = true;
-                        try { tvi.IsSelected = true; }
+                        try { container.IsSelected = true; }
                         finally { state.SuppressSelection = false; }
-                        tvi.BringIntoView();
+                        container.BringIntoView();
                     }
-
-                    if (state.SelectGeneration != selectGen) return;
 
                     FlurryAssetPath current = traversalStack.Count > 0 ? traversalStack[traversalStack.Count - 1] : null;
-
                     if (current != null)
                         current.IsSelected = true;
 
-                    if (state.SelectedNode == null || !string.Equals(state.SelectedNode.FullPath, current == null ? "" : current.FullPath, StringComparison.OrdinalIgnoreCase))
+                    if (state.SelectedNode == null || !string.Equals(state.SelectedNode.FullPath, current?.FullPath ?? "", StringComparison.OrdinalIgnoreCase))
                     {
                         state.SelectedNode = current;
                         ctrl.SelectedPath = current == null || current.IsRoot ? "" : current.FullPath;
@@ -1059,11 +918,15 @@ namespace Flurry.Editor.DataExplorer
                     if (ctrl.AssetListVisible)
                     {
                         await UpdateListViewAsync(ctrl, state, current, true);
-                        if (state.SelectGeneration != selectGen) return;
-                        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                        if (state.SelectGeneration != selectGen) return;
+                        if (state.SelectGeneration != selectGen)
+                            return;
+                        await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                        if (state.SelectGeneration != selectGen)
+                            return;
+
                         await ForceRealizeItem(AssetListViewRef(ctrl), entry, state, selectGen);
-                        if (state.SelectGeneration != selectGen) return;
+                        if (state.SelectGeneration != selectGen)
+                            return;
 
                         ListView assetListView = AssetListViewRef(ctrl);
                         state.SuppressSelection = true;
@@ -1078,7 +941,8 @@ namespace Flurry.Editor.DataExplorer
                         }
                     }
 
-                    if (state.SelectGeneration != selectGen) return;
+                    if (state.SelectGeneration != selectGen)
+                        return;
                     ctrl.SelectedAsset = entry;
                 }
                 catch (Exception e)
@@ -1088,48 +952,171 @@ namespace Flurry.Editor.DataExplorer
                 finally
                 {
                     state.SuppressModified = false;
-                    HideProgress(state, ctrl);
+                    SetProgressVisible(state, ctrl, false);
                 }
             }).Task.Unwrap();
+        }
+
+        private static async Task ClearFiltersForSelectionAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, int selectGen)
+        {
+            ctrl.SetValue(FrostyDataExplorer.ShowOnlyModifiedProperty, false);
+            FlurryExplorerBehaviors.SetShowOnlyUnModified(ctrl, false);
+            FlurryExplorerBehaviors.SetShowOnlyUnsavedModified(ctrl, false);
+            FlurryExplorerBehaviors.SetShowOnlyAdded(ctrl, false);
+
+            if (PrevFilterTextRef(ctrl) != "")
+            {
+                TextBox filterTextBox = FilterTextBoxRef(ctrl);
+                if (filterTextBox != null)
+                    filterTextBox.Text = "";
+                PrevFilterTextRef(ctrl) = "";
+                BuildFilterData(state, "", ctrl);
+            }
+
+            ClearTypeFilter(state);
+
+            await UpdateTreeViewAsync(ctrl, state, false, false);
+            if (state.SelectGeneration != selectGen)
+                return;
+
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+        }
+
+        private static List<FlurryAssetPath> ResolveTraversalStack(FlurryExplorerState state, AssetEntry entry)
+        {
+            string[] pathSegments = entry.Path.Length > 0
+                ? entry.Path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                : new[] { RootKeyName };
+
+            var stack = new List<FlurryAssetPath>();
+            lock (state.BaseLock)
+            {
+                FlurryAssetPath cursor = state.Root;
+                if (cursor != null)
+                    stack.Add(cursor);
+
+                foreach (string segment in pathSegments)
+                {
+                    if (cursor == null || !cursor.Children.TryGetValue(segment, out FlurryAssetPath next))
+                        break;
+                    cursor = next;
+                    stack.Add(cursor);
+                }
+            }
+            return stack;
+        }
+
+        private static async Task<TreeViewItem> RevealPathAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, List<FlurryAssetPath> traversalStack, int selectGen)
+        {
+            TreeViewItem container = null;
+            foreach (FlurryAssetPath node in traversalStack.Skip(1))
+            {
+                FlurryAssetPath target;
+                lock (state.BaseLock)
+                {
+                    target = node.Clone ?? node;
+                    target.LazyLoadChildren();
+                }
+
+                await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                if (state.SelectGeneration != selectGen)
+                    return null;
+
+                if (container != null)
+                {
+                    container.IsExpanded = true;
+                    container.UpdateLayout();
+                    await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                    if (state.SelectGeneration != selectGen)
+                        return null;
+
+                    await ForceRealizeItem(container, target, state, selectGen);
+                    if (state.SelectGeneration != selectGen)
+                        return null;
+
+                    container = await GetContainerFromItemAsync<TreeViewItem>(container, target, state, selectGen);
+                }
+                else if (node.Parent == state.Root)
+                {
+                    await ForceRealizeItem(treeView, target, state, selectGen);
+                    if (state.SelectGeneration != selectGen)
+                        return null;
+
+                    container = await GetContainerFromItemAsync<TreeViewItem>(treeView, target, state, selectGen);
+                }
+
+                if (state.SelectGeneration != selectGen)
+                    return null;
+            }
+            return container;
+        }
+
+        /// <summary>
+        /// Fallback for fully realized trees (no virtualizing panel found): walks already
+        /// generated containers instead of forcing realization.
+        /// </summary>
+        private static TreeViewItem WalkRealizedContainers(FlurryExplorerState state, TreeView treeView, List<FlurryAssetPath> traversalStack)
+        {
+            TreeViewItem container = null;
+            foreach (FlurryAssetPath node in traversalStack.Skip(1))
+            {
+                FlurryAssetPath target;
+                lock (state.BaseLock)
+                {
+                    target = node.Clone ?? node;
+                }
+
+                ItemsControl parent = container ?? (ItemsControl)treeView;
+                TreeViewItem child = parent.ItemContainerGenerator.ContainerFromItem(target) as TreeViewItem;
+                if (child == null)
+                    break;
+
+                child.IsExpanded = true;
+                child.UpdateLayout();
+                container = child;
+            }
+            return container;
         }
 
         private static async Task<T> GetContainerFromItemAsync<T>(ItemsControl parent, object item, FlurryExplorerState state, int selectGen)
             where T : DependencyObject
         {
             int retries = 40;
-
             while (parent.ItemContainerGenerator.ContainerFromItem(item) as T == null && retries-- > 0)
             {
-                if (state.SelectGeneration != selectGen) return null;
+                if (state.SelectGeneration != selectGen)
+                    return null;
                 await Task.Delay(50);
                 parent.UpdateLayout();
             }
 
-            if (state.SelectGeneration != selectGen) return null;
+            if (state.SelectGeneration != selectGen)
+                return null;
             return parent.ItemContainerGenerator.ContainerFromItem(item) as T;
         }
 
         private static async Task<bool> ForceRealizeItem(ItemsControl parent, object item, FlurryExplorerState state, int selectGen)
         {
             int index = FindIndexOfNode(parent, item);
-            if (index < 0) return false;
+            if (index < 0)
+                return false;
 
             int retries = 20;
-            var panel = FindVirtualizingStackPanel(parent);
+            VirtualizingStackPanel panel = FindVirtualizingStackPanel(parent);
             while (panel == null && retries-- > 0)
             {
-                if (state.SelectGeneration != selectGen) return false;
+                if (state.SelectGeneration != selectGen)
+                    return false;
                 await Task.Delay(50);
                 panel = FindVirtualizingStackPanel(parent);
             }
-            if (panel != null)
-            {
-                panel.BringIndexIntoViewPublic(index);
-                await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                return true;
-            }
 
-            return false;
+            if (panel == null)
+                return false;
+
+            panel.BringIndexIntoViewPublic(index);
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            return true;
         }
 
         private static int FindIndexOfNode(ItemsControl parent, object item)
@@ -1137,8 +1124,8 @@ namespace Flurry.Editor.DataExplorer
             if (parent == null || item == null)
                 return -1;
 
-            var items = parent.ItemsSource as IList;
-            if (items == null) return -1;
+            if (!(parent.ItemsSource is IList items))
+                return -1;
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -1151,15 +1138,16 @@ namespace Flurry.Editor.DataExplorer
 
         private static VirtualizingStackPanel FindVirtualizingStackPanel(DependencyObject parent)
         {
-            if (parent == null) return null;
+            if (parent == null)
+                return null;
 
             int count = VisualTreeHelper.GetChildrenCount(parent);
             for (int i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
 
-                if (child is VirtualizingStackPanel vsp)
-                    return vsp;
+                if (child is VirtualizingStackPanel panel)
+                    return panel;
 
                 VirtualizingStackPanel result = FindVirtualizingStackPanel(child);
                 if (result != null)
@@ -1169,11 +1157,16 @@ namespace Flurry.Editor.DataExplorer
             return null;
         }
 
+        #endregion
+
+        #region Asset types
+
         internal static Task PopulateAssetTypesComboBox(FrostyDataExplorer ctrl, FlurryExplorerState state)
         {
-            if (state.TypeComboBox == null || ctrl.ItemsSource == null) return Task.CompletedTask;
-            var entries = ctrl.ItemsSource;
+            if (state.TypeComboBox == null || ctrl.ItemsSource == null)
+                return Task.CompletedTask;
 
+            IEnumerable entries = ctrl.ItemsSource;
             return Task.Run(() =>
             {
                 try
@@ -1185,24 +1178,21 @@ namespace Flurry.Editor.DataExplorer
                             assetTypes.Add(asset.Type);
                     }
 
-                    List<string> concreteTypes = new List<string>(assetTypes);
-                    foreach (string typeName in concreteTypes)
+                    // Include SDK base types so filtering by a base type matches concrete entries.
+                    foreach (string typeName in new List<string>(assetTypes))
                     {
                         Type sdkType = TypeLibrary.GetType(typeName);
-                        if (sdkType == null) continue;
-                        Type baseType = sdkType.BaseType;
-                        while (baseType != null && baseType != typeof(object))
-                        {
+                        if (sdkType == null)
+                            continue;
+
+                        for (Type baseType = sdkType.BaseType; baseType != null && baseType != typeof(object); baseType = baseType.BaseType)
                             assetTypes.Add(baseType.Name);
-                            baseType = baseType.BaseType;
-                        }
                     }
 
-                    List<string> list = new List<string>(assetTypes);
-
-                    ctrl.Dispatcher.Invoke(() =>
+                    List<string> types = new List<string>(assetTypes);
+                    ctrl.Dispatcher.InvokeAsync(() =>
                     {
-                        state.AllTypes = list;
+                        state.AllTypes = types;
                         state.TypeDescendants.Clear();
                         state.UpdatingTypeCombo = true;
                         try
@@ -1218,182 +1208,11 @@ namespace Flurry.Editor.DataExplorer
                 }
                 catch (Exception ex)
                 {
-                    App.Logger.LogError("Flurry type dropdown population failed: " + ex.ToString());
+                    App.Logger.LogError(ex.ToString());
                 }
             });
         }
 
-        internal static List<string> BuildTypeList(FlurryExplorerState state, string searchText)
-        {
-            var result = new List<string>();
-            result.Add("All");
-
-            if (string.IsNullOrWhiteSpace(searchText) || searchText.Equals("All", StringComparison.OrdinalIgnoreCase))
-            {
-                result.AddRange(state.AllTypes);
-                return result;
-            }
-
-            List<string> startsWith = new List<string>();
-            List<string> contains = new List<string>();
-            foreach (string type in state.AllTypes)
-            {
-                int idx = type.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
-                if (idx == 0)
-                    startsWith.Add(type);
-                else if (idx > 0)
-                    contains.Add(type);
-            }
-
-            startsWith.Sort(StringComparer.OrdinalIgnoreCase);
-            contains.Sort(StringComparer.OrdinalIgnoreCase);
-
-            result.AddRange(startsWith);
-            result.AddRange(contains);
-            return result;
-        }
-
-        internal static void WireTypeComboBox(FrostyDataExplorer ctrl, FlurryExplorerState state)
-        {
-            ComboBox combo = state.TypeComboBox;
-            if (combo == null) return;
-
-            combo.DropDownOpened += (sender, e) =>
-            {
-                if (state.UpdatingTypeCombo) return;
-                InitTypeSearchBox(ctrl, state);
-                ResetTypeSearch(state);
-            };
-
-            combo.DropDownClosed += (sender, e) =>
-            {
-                if (state.UpdatingTypeCombo) return;
-                state.UpdatingTypeCombo = true;
-                try
-                {
-                    object selected = combo.SelectedItem;
-                    combo.ItemsSource = BuildTypeList(state, "");
-                    if (selected != null)
-                        combo.SelectedItem = selected;
-                }
-                finally
-                {
-                    state.UpdatingTypeCombo = false;
-                }
-            };
-
-            combo.SelectionChanged += (sender, e) =>
-            {
-                if (state.UpdatingTypeCombo) return;
-
-                string selected = combo.SelectedItem as string;
-                if (selected == null) return;
-
-                state.TypeFilter = selected == "All" ? null : selected;
-                state.TypeFilterFromText = false;
-                StripPlainTypeTokens(ctrl, state);
-                UpdateTreeViewAsync(ctrl, state);
-            };
-        }
-
-        private static void InitTypeSearchBox(FrostyDataExplorer ctrl, FlurryExplorerState state)
-        {
-            if (state.TypeSearchBox != null) return;
-
-            ComboBox combo = state.TypeComboBox;
-            TextBox searchBox = combo.Template != null ? combo.Template.FindName("PART_TypeSearchBox", combo) as TextBox : null;
-            if (searchBox == null) return;
-
-            state.TypeSearchBox = searchBox;
-            searchBox.TextChanged += (sender, e) => SearchTypeList(ctrl, state);
-            searchBox.PreviewKeyDown += (sender, e) => TypeSearchBox_PreviewKeyDown(combo, searchBox, e);
-        }
-
-        private static void ResetTypeSearch(FlurryExplorerState state)
-        {
-            ComboBox combo = state.TypeComboBox;
-            TextBox searchBox = state.TypeSearchBox;
-            if (combo == null || searchBox == null) return;
-
-            state.UpdatingTypeCombo = true;
-            try
-            {
-                searchBox.Text = "";
-                combo.ItemsSource = BuildTypeList(state, "");
-                searchBox.Focus();
-                searchBox.CaretIndex = 0;
-            }
-            finally
-            {
-                state.UpdatingTypeCombo = false;
-            }
-        }
-
-        private static void SearchTypeList(FrostyDataExplorer ctrl, FlurryExplorerState state)
-        {
-            ComboBox combo = state.TypeComboBox;
-            TextBox searchBox = state.TypeSearchBox;
-            if (combo == null || searchBox == null || state.UpdatingTypeCombo) return;
-
-            state.UpdatingTypeCombo = true;
-            try
-            {
-                combo.ItemsSource = BuildTypeList(state, searchBox.Text);
-            }
-            finally
-            {
-                state.UpdatingTypeCombo = false;
-            }
-        }
-
-        private static void TypeSearchBox_PreviewKeyDown(ComboBox combo, TextBox searchBox, System.Windows.Input.KeyEventArgs e)
-        {
-            switch (e.Key)
-            {
-                case System.Windows.Input.Key.Down:
-                case System.Windows.Input.Key.Up:
-                    {
-                        int count = combo.Items.Count;
-                        if (count == 0)
-                        {
-                            e.Handled = true;
-                            return;
-                        }
-
-                        bool hasSearchText = !string.IsNullOrEmpty(searchBox.Text) && !searchBox.Text.Equals("All", StringComparison.OrdinalIgnoreCase);
-                        int idx = combo.SelectedIndex;
-                        if (idx < 0)
-                        {
-                            idx = e.Key == System.Windows.Input.Key.Down ? (hasSearchText && count > 1 ? 1 : 0) : count - 1;
-                        }
-                        else
-                        {
-                            idx += e.Key == System.Windows.Input.Key.Down ? 1 : -1;
-                        }
-
-                        if (idx >= count) idx = count - 1;
-                        if (idx < 0) idx = 0;
-
-                        combo.SelectedIndex = idx;
-                        ComboBoxItem cbi = combo.ItemContainerGenerator.ContainerFromIndex(idx) as ComboBoxItem;
-                        if (cbi != null)
-                            cbi.BringIntoView();
-                        e.Handled = true;
-                        break;
-                    }
-                case System.Windows.Input.Key.Enter:
-                    if (combo.SelectedItem != null)
-                        combo.IsDropDownOpen = false;
-                    e.Handled = true;
-                    break;
-                case System.Windows.Input.Key.Escape:
-                    combo.IsDropDownOpen = false;
-                    e.Handled = true;
-                    break;
-            }
-        }
+        #endregion
     }
 }
-
-
-
