@@ -63,7 +63,7 @@ namespace Flurry.Editor
         [Description("Replaces the Data Explorer's tree building and filtering with a virtualized, background-threaded implementation (ported from Frosty-M24). Takes effect after restarting the editor.")]
         [Editor(typeof(FrostyBooleanEditor))]
         [EbxFieldMeta(EbxFieldType.Boolean)]
-        public bool DataExplorerFastMode { get; set; } = false;
+        public bool DataExplorerFastMode { get; set; } = true;
 
         [Category("Additional Tweaks")]
         [DisplayName("Enable Kyber Integration")]
