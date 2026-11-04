@@ -588,17 +588,26 @@ namespace Flurry.Editor.DataExplorer
 
                     var buildStopwatch = System.Diagnostics.Stopwatch.StartNew();
                     long lastSwapMs = -FlurryExplorerState.SwapIntervalMs;
-                    var seenEntries = new HashSet<AssetEntry>();
 
                     foreach (AssetEntry entry in items)
                     {
-                        seenEntries.Add(entry);
-
-                        FlurryAssetPath rootPath;
                         lock (state.BaseLock)
                         {
-                            rootPath = state.Root.Children.TryGetValue(RootKeyName, out rootPath) ? rootPath : null;
-                            InsertEntry(state, state.Root, rootPath, entry);
+                            // A newer ItemsSource may have reset the root; bail out instead
+                            // of inserting into a stale or null tree.
+                            if (state.Root == null)
+                                return;
+
+                            // BaseEntries is the insert ledger. Gating on it keeps concurrent
+                            // SyncBaseTree calls and superseded builds from adding the same
+                            // entry twice, and keeps the ledger consistent mid-build so the
+                            // incremental sync path stays correct.
+                            if (state.BaseEntries.Add(entry))
+                            {
+                                FlurryAssetPath rootPath;
+                                rootPath = state.Root.Children.TryGetValue(RootKeyName, out rootPath) ? rootPath : null;
+                                InsertEntry(state, state.Root, rootPath, entry);
+                            }
                         }
 
                         if (buildStopwatch.ElapsedMilliseconds - lastSwapMs >= FlurryExplorerState.SwapIntervalMs)
@@ -612,10 +621,7 @@ namespace Flurry.Editor.DataExplorer
 
                     lock (state.BaseLock)
                     {
-                        state.BaseEntries.Clear();
-                        foreach (AssetEntry entry in seenEntries)
-                            state.BaseEntries.Add(entry);
-                        state.BaseEntryCount = seenEntries.Count;
+                        state.BaseEntryCount = state.BaseEntries.Count;
                     }
 
                     await SwapPartialTreeAsync(ctrl, state, generation);
@@ -648,6 +654,8 @@ namespace Flurry.Editor.DataExplorer
 
             GraftCloneLinks(oldBase, newBase);
 
+            // Fresh tree, fresh insert ledger.
+            state.BaseEntries.Clear();
             state.Root = newBase;
         }
 
@@ -830,7 +838,7 @@ namespace Flurry.Editor.DataExplorer
                     if (generation != state.Generation)
                         return;
 
-                    await ctrl.Dispatcher.InvokeAsync(() => ApplyTreeViewResultAsync(ctrl, state, treeView, newRoot, generation));
+                    await ctrl.Dispatcher.InvokeAsync(() => ApplyTreeViewResultAsync(ctrl, state, treeView, newRoot, generation)).Task.Unwrap();
                 }
                 catch (Exception ex)
                 {
@@ -852,6 +860,7 @@ namespace Flurry.Editor.DataExplorer
 
             string selectedFullPath = state.DesiredSelectionPath ??
                 (state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null);
+            bool isHandshake = state.DesiredSelectionPath != null;
 
             state.SuppressSelection = true;
             try
@@ -870,9 +879,6 @@ namespace Flurry.Editor.DataExplorer
                     {
                         state.DesiredSelectionPath = null;
                     }
-                    else
-                    {
-                    }
                 }
                 else
                 {
@@ -882,9 +888,11 @@ namespace Flurry.Editor.DataExplorer
 
                 await UpdateListViewAsync(ctrl, state, selectedNode, true);
 
-                // A deep selection is not visible until its ancestor containers are
-                // realized; expand the path so the highlight actually shows up.
-                if (selectedNode != null && !string.IsNullOrEmpty(selectedFullPath) && selectedFullPath != RootDisplayName)
+                // A pending early-selection is not visible until its ancestor containers are
+                // realized; expand the path so the highlight actually shows up. Ordinary
+                // filter rebuilds must not steal the scroll position, so reveal only when
+                // this result is completing a SelectAsset handshake.
+                if (isHandshake && selectedNode != null && !string.IsNullOrEmpty(selectedFullPath) && selectedFullPath != RootDisplayName)
                 {
                     int revealGen = state.SelectGeneration;
                     _ = RevealDeferredSelectionAsync(ctrl, state, treeView, selectedFullPath, revealGen);
@@ -1075,7 +1083,7 @@ namespace Flurry.Editor.DataExplorer
                         // snapshot would not survive the final swap. Record the desired path
                         // and let the next tree swap perform the visual selection instead
                         // (ApplyTreeViewResult consumes it and fills the asset list).
-                        state.DesiredSelectionPath = entry.Path;
+                        state.DesiredSelectionPath = entry.Path.Length > 0 ? entry.Path : RootDisplayName;
                         ctrl.SelectedAsset = entry;
                         return;
                     }

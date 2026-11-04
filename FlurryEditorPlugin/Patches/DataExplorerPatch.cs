@@ -59,7 +59,6 @@ namespace Flurry.Editor.Patches
                 readyTcs.TrySetResult(true);
                 FlurryExplorerEngine.SetProgressVisible(state, ctrl, generation, false);
             }, TaskScheduler.Default);
-            _ = populateTypes;
 
             return false;
         }
