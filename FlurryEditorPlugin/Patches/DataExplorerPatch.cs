@@ -28,10 +28,12 @@ namespace Flurry.Editor.Patches
             FrostyDataExplorer ctrl = (FrostyDataExplorer)o;
             FlurryExplorerState state = FlurryExplorerEngine.GetState(ctrl);
             state.ReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<bool> readyTcs = state.ReadyTcs;
             state.Generation++;
             state.SelectedNode = null;
             state.Root = null;
             state.TypeFilter = null;
+            state.TypeFilterFromText = false;
             ctrl.SelectedAsset = null;
 
             ListView assetListView = FlurryExplorerEngine.AssetListViewRef(ctrl);
@@ -44,7 +46,7 @@ namespace Flurry.Editor.Patches
             var buildMapping = FlurryExplorerEngine.CreateAssetPathMappingAsync(ctrl, state);
             _ = Task.Factory.ContinueWhenAll(new Task[] { populateTypes, buildMapping }, tasks =>
             {
-                state.ReadyTcs.TrySetResult(true);
+                readyTcs.TrySetResult(true);
                 FlurryExplorerEngine.HideProgress(state, ctrl);
             });
 
@@ -57,9 +59,17 @@ namespace Flurry.Editor.Patches
         {
             if (!FlurryDataExplorerFastMode.Enabled) return true;
 
-            FlurryExplorerState state = FlurryExplorerEngine.GetState((FrostyDataExplorer)o);
+            FrostyDataExplorer ctrl = (FrostyDataExplorer)o;
+            FlurryExplorerState state = FlurryExplorerEngine.GetState(ctrl);
             if (state.SuppressModified)
                 return false;
+
+            if ((bool)e.NewValue && FlurryExplorerBehaviors.GetShowOnlyUnModified(ctrl))
+            {
+                state.SuppressModified = true;
+                try { FlurryExplorerBehaviors.SetShowOnlyUnModified(ctrl, false); }
+                finally { state.SuppressModified = false; }
+            }
 
             return true;
         }
@@ -93,7 +103,7 @@ namespace Flurry.Editor.Patches
             if (!FlurryDataExplorerFastMode.Enabled) return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
-            _ = FlurryExplorerEngine.UpdateTreeViewAsync(__instance, state, false);
+            _ = FlurryExplorerEngine.UpdateTreeViewAsync(__instance, state, false, true, true, true);
 
             ListView assetListView = FlurryExplorerEngine.AssetListViewRef(__instance);
             if (__instance.SelectedAssets != null && assetListView != null)
@@ -113,6 +123,8 @@ namespace Flurry.Editor.Patches
             if (!FlurryDataExplorerFastMode.Enabled) return true;
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
+            if (!state.SuppressSelection)
+                state.SelectGeneration++;
             if (state.SuppressModified) return false;
 
             TreeView assetTreeView = FlurryExplorerEngine.AssetTreeViewRef(__instance);
@@ -127,6 +139,17 @@ namespace Flurry.Editor.Patches
 
             _ = FlurryExplorerEngine.UpdateListViewAsync(__instance, state, newItem);
             return false;
+        }
+
+        [HarmonyPatch("assetListView_SelectionChanged")]
+        [HarmonyPostfix]
+        static void AssetListView_SelectionChanged_Postfix(FrostyDataExplorer __instance)
+        {
+            if (!FlurryDataExplorerFastMode.Enabled) return;
+
+            FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
+            if (!state.SuppressSelection)
+                state.SelectGeneration++;
         }
 
         [HarmonyPatch("BuildFilterData")]
@@ -156,6 +179,9 @@ namespace Flurry.Editor.Patches
             {
                 filterBox.AddHandler(System.Windows.UIElement.KeyDownEvent, new System.Windows.Input.KeyEventHandler((sender, e) =>
                 {
+                    if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.None)
+                        return;
+
                     if (e.Key == System.Windows.Input.Key.Up)
                     {
                         filterBox.CaretIndex = 0;

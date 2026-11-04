@@ -349,8 +349,18 @@
                                     <Button Height="20" Width="20" ToolTip="Find Opened Asset" HorizontalAlignment="Right" Margin="6,0,0,0" Command="{Binding Path=FindOpenedAssetCommand, RelativeSource={RelativeSource AncestorType={x:Type ctrls:FrostyDataExplorer}}}">
                                         <Image Source="/FrostyEditor;component/Images/Open.png" Width="16"/>
                                     </Button>
-                                    <CheckBox x:Name="PART_ShowOnlyModifiedCheckBox" VerticalAlignment="Center" Margin="6,0,0,0" IsChecked="{Binding Path=ShowOnlyModified, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type ctrls:FrostyDataExplorer}}}">
-                                        <TextBlock Text="Show only modified" Margin="4,-1,0,0" VerticalAlignment="Center" Foreground="{StaticResource FontColor}"/>
+                                    <TextBlock Text="Show Only:" VerticalAlignment="Center" Foreground="{StaticResource FontColor}" Margin="6,0,0,0"/>
+                                    <CheckBox x:Name="PART_ShowOnlyModifiedCheckBox" VerticalAlignment="Center" Margin="4,0,0,0" IsChecked="{Binding Path=ShowOnlyModified, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type ctrls:FrostyDataExplorer}}}">
+                                        <TextBlock Text="Modified" VerticalAlignment="Center" Foreground="{StaticResource FontColor}"/>
+                                    </CheckBox>
+                                    <CheckBox VerticalAlignment="Center" Margin="4,0,0,0" IsChecked="{Binding Path=(flurry:FlurryExplorerBehaviors.ShowOnlyUnModified), RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <TextBlock Text="Unmodified" VerticalAlignment="Center" Foreground="{StaticResource FontColor}"/>
+                                    </CheckBox>
+                                    <CheckBox VerticalAlignment="Center" Margin="4,0,0,0" IsChecked="{Binding Path=(flurry:FlurryExplorerBehaviors.ShowOnlyUnsavedModified), RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <TextBlock Text="Unsaved" VerticalAlignment="Center" Foreground="{StaticResource FontColor}"/>
+                                    </CheckBox>
+                                    <CheckBox VerticalAlignment="Center" Margin="4,0,0,0" IsChecked="{Binding Path=(flurry:FlurryExplorerBehaviors.ShowOnlyAdded), RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <TextBlock Text="Added" VerticalAlignment="Center" Foreground="{StaticResource FontColor}"/>
                                     </CheckBox>
                                 </StackPanel>
                             </Border>
