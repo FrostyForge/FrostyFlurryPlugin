@@ -59,6 +59,13 @@ namespace Flurry.Editor
         public bool BundlesTabTweaks { get; set; } = true;
 
         [Category("Additional Tweaks")]
+        [DisplayName("Enable Fast Data Explorer")]
+        [Description("Replaces the Data Explorer's tree building and filtering with a virtualized, background-threaded implementation (ported from Frosty-M24). Takes effect after restarting the editor.")]
+        [Editor(typeof(FrostyBooleanEditor))]
+        [EbxFieldMeta(EbxFieldType.Boolean)]
+        public bool DataExplorerFastMode { get; set; } = true;
+
+        [Category("Additional Tweaks")]
         [DisplayName("Enable Kyber Integration")]
         [Description("If enabled, adds Kyber buttons to the editor UI.")]
         [Editor(typeof(FrostyBooleanEditor))]
@@ -75,6 +82,7 @@ namespace Flurry.Editor
             ReferencesTabTweaks = Config.Get<bool>("Flurry.ReferencesTabTweaks", true);
             BundlesTabTweaks = Config.Get<bool>("Flurry.BundlesTabTweaks", true);
             KyberIntegration = Config.Get<bool>("Flurry.KyberIntegration", true);
+            DataExplorerFastMode = Config.Get<bool>("Flurry.DataExplorerFastMode", false);
         }
 
         public override void Save()
@@ -87,6 +95,7 @@ namespace Flurry.Editor
             Config.Add("Flurry.ReferencesTabTweaks", ReferencesTabTweaks);
             Config.Add("Flurry.BundlesTabTweaks", BundlesTabTweaks);
             Config.Add("Flurry.KyberIntegration", KyberIntegration);
+            Config.Add("Flurry.DataExplorerFastMode", DataExplorerFastMode);
             Config.Save();
         }
 

@@ -17,20 +17,27 @@ namespace Flurry.Editor
             config.Load();
             Harmony.DEBUG = config.HarmonyDebug;
 
-            FileLog.Debug("ManagerType: " + App.PluginManager.ManagerType);
             switch (App.PluginManager.ManagerType)
             {
                 case PluginManagerType.Editor:
-                    ApplyEditorOnlyPatches(logger);
+                    ApplyEditorOnlyPatches(logger, config);
                     break;
             }
         };
 
-        private void ApplyEditorOnlyPatches(ILogger taskLogger)
+        private void ApplyEditorOnlyPatches(ILogger taskLogger, FlurryEditorConfig config)
         {
             taskLogger.Log("[Flurry] Applying editor patches...");
             var harmony = new Harmony("io.github.adamraichu.frosty.flurry.editor");
             harmony.PatchCategory("flurry.editor");
+
+            if (config.DataExplorerFastMode)
+            {
+                taskLogger.Log("[Flurry] Enabling fast Data Explorer...");
+                DataExplorer.FlurryExplorerEngine.FastModeEnabled = true;
+                DataExplorer.FlurryExplorerTheme.Apply();
+                harmony.PatchCategory("flurry.dataexplorer");
+            }
         }
     }
 
