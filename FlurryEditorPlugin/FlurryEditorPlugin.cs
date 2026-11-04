@@ -31,6 +31,16 @@ namespace Flurry.Editor
             taskLogger.Log("[Flurry] Applying editor patches...");
             var harmony = new Harmony("io.github.adamraichu.frosty.flurry.editor");
             harmony.PatchCategory("flurry.editor");
+
+            FlurryEditorConfig config = new FlurryEditorConfig();
+            config.Load();
+            if (config.DataExplorerFastMode)
+            {
+                taskLogger.Log("[Flurry] Enabling fast Data Explorer...");
+                Patches.FlurryDataExplorerFastMode.Enabled = true;
+                DataExplorer.FlurryExplorerTheme.Apply();
+                harmony.PatchCategory("flurry.dataexplorer");
+            }
         }
     }
 
