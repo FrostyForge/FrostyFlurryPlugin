@@ -727,9 +727,6 @@ namespace Flurry.Editor.DataExplorer
                 {
                     next = new FlurryAssetPath(part, "", current);
                     current.Children[part] = next;
-
-                    if (!current.IsLazyLoaded && current.VisibleChildren.Count == 0)
-                        current.VisibleChildren.Add(new FlurryAssetPath(LoadingDisplayName, "", null));
                 }
                 else if (part.Any(char.IsUpper))
                 {
@@ -862,6 +859,9 @@ namespace Flurry.Editor.DataExplorer
                 (state.SelectedNode != null && !state.SelectedNode.IsRoot ? state.SelectedNode.FullPath : null);
             bool isHandshake = state.DesiredSelectionPath != null;
 
+            // SuppressSelection spans the whole sequence (tree rebind, list bind, reveal):
+            // container realization inside here pushes IsSelected bindings that would
+            // otherwise fire selection events and abort in-flight SelectAsset chains.
             state.SuppressSelection = true;
             try
             {
@@ -894,8 +894,7 @@ namespace Flurry.Editor.DataExplorer
                 // this result is completing a SelectAsset handshake.
                 if (isHandshake && selectedNode != null && !string.IsNullOrEmpty(selectedFullPath) && selectedFullPath != RootDisplayName)
                 {
-                    int revealGen = state.SelectGeneration;
-                    _ = RevealDeferredSelectionAsync(ctrl, state, treeView, selectedFullPath, revealGen);
+                    await RevealDeferredSelectionAsync(ctrl, state, treeView, selectedFullPath, state.SelectGeneration);
                 }
             }
             finally
@@ -935,9 +934,10 @@ namespace Flurry.Editor.DataExplorer
             if (container != null)
             {
                 container.UpdateLayout();
+                bool outerSuppress = state.SuppressSelection;
                 state.SuppressSelection = true;
                 try { container.IsSelected = true; }
-                finally { state.SuppressSelection = false; }
+                finally { state.SuppressSelection = outerSuppress; }
                 container.BringIntoView();
             }
         }
@@ -973,11 +973,15 @@ namespace Flurry.Editor.DataExplorer
 
             return ctrl.Dispatcher.InvokeAsync(() =>
             {
+                bool outerSuppress = state.SuppressSelection;
                 if (suppressSelectionEvents)
                     state.SuppressSelection = true;
                 try
                 {
-                    assetListView.ItemsSource = path.Entries;
+                    // Bind a snapshot rather than the live collection: background builds
+                    // keep mutating node Entries, and a bound ObservableCollection would
+                    // throw on cross-thread changes.
+                    assetListView.ItemsSource = new List<AssetEntry>(path.Entries);
 
                     if (ctrl.SelectedAsset != null)
                     {
@@ -992,7 +996,7 @@ namespace Flurry.Editor.DataExplorer
                 finally
                 {
                     if (suppressSelectionEvents)
-                        state.SuppressSelection = false;
+                        state.SuppressSelection = outerSuppress;
                 }
             }, DispatcherPriority.Background).Task;
         }
@@ -1057,6 +1061,25 @@ namespace Flurry.Editor.DataExplorer
                 return;
             }
 
+            // Set synchronously: vanilla callers (bookmarks) do SelectAsset followed
+            // immediately by DoubleClickSelectedAsset, which reads SelectedAsset.
+            ctrl.SelectedAsset = entry;
+
+            // Deselect the previous folder node up front: its stale IsSelected binding
+            // would otherwise re-select it when shared ancestors expand during the reveal.
+            if (state.SelectedNode != null)
+            {
+                state.SuppressModified = true;
+                state.SuppressSelection = true;
+                try { state.SelectedNode.IsSelected = false; }
+                finally
+                {
+                    state.SuppressSelection = false;
+                    state.SuppressModified = false;
+                }
+            }
+
+
             await ctrl.Dispatcher.InvokeAsync(async () =>
             {
                 try
@@ -1072,9 +1095,18 @@ namespace Flurry.Editor.DataExplorer
 
                     if (clearFilters && (anyShowFlags || PrevFilterTextRef(ctrl) != ""))
                     {
+                        // Aim the intermediate swaps at the target so the filter-clear
+                        // rebuild selects it instead of the stale previous selection.
+                        state.DesiredSelectionPath = entry.Path.Length > 0 ? entry.Path : RootDisplayName;
+                        ctrl.SelectedAsset = entry;
+
                         await ClearFiltersForSelectionAsync(ctrl, state, selectGen);
                         if (state.SelectGeneration != selectGen)
+                        {
+                            var treeNode = AssetTreeViewRef(ctrl)?.SelectedItem as FlurryAssetPath;
+                            var listNode = AssetListViewRef(ctrl)?.SelectedItem as AssetEntry;
                             return;
+                        }
                     }
 
                     if (buildStillInFlight)
@@ -1089,6 +1121,8 @@ namespace Flurry.Editor.DataExplorer
                     }
 
                     List<FlurryAssetPath> traversalStack = ResolveTraversalStack(state, entry);
+                    FlurryAssetPath stackEnd = traversalStack.Count > 0 ? traversalStack[traversalStack.Count - 1] : null;
+
                     TreeViewItem container = await RevealPathAsync(ctrl, state, treeView, traversalStack, selectGen);
                     if (state.SelectGeneration != selectGen)
                     {
@@ -1097,10 +1131,14 @@ namespace Flurry.Editor.DataExplorer
 
                     if (container == null && traversalStack.Count > 1)
                     {
-                        container = WalkRealizedContainers(state, treeView, traversalStack);
+                        state.SuppressSelection = true;
+                        try { container = WalkRealizedContainers(state, treeView, traversalStack); }
+                        finally { state.SuppressSelection = false; }
                     }
                     if (state.SelectGeneration != selectGen)
+                    {
                         return;
+                    }
 
                     if (container != null)
                     {
@@ -1125,14 +1163,20 @@ namespace Flurry.Editor.DataExplorer
                     {
                         await UpdateListViewAsync(ctrl, state, current, true);
                         if (state.SelectGeneration != selectGen)
+                        {
                             return;
+                        }
                         await Dispatcher.Yield(DispatcherPriority.ContextIdle);
                         if (state.SelectGeneration != selectGen)
+                        {
                             return;
+                        }
 
                         await ForceRealizeItem(AssetListViewRef(ctrl), entry, state, selectGen);
                         if (state.SelectGeneration != selectGen)
+                        {
                             return;
+                        }
 
                         ListView assetListView = AssetListViewRef(ctrl);
                         state.SuppressSelection = true;
@@ -1145,6 +1189,8 @@ namespace Flurry.Editor.DataExplorer
                         {
                             state.SuppressSelection = false;
                         }
+
+                        AssetEntry listSelected = assetListView.SelectedItem as AssetEntry;
                     }
 
                     if (state.SelectGeneration != selectGen)
@@ -1215,40 +1261,53 @@ namespace Flurry.Editor.DataExplorer
         private static async Task<TreeViewItem> RevealPathAsync(FrostyDataExplorer ctrl, FlurryExplorerState state, TreeView treeView, List<FlurryAssetPath> traversalStack, int selectGen)
         {
             TreeViewItem container = null;
-            foreach (FlurryAssetPath node in traversalStack.Skip(1))
+
+            // The reveal realizes containers whose IsSelected bindings may still carry
+            // stale visual state, which fires selection events. Those must not abort the
+            // reveal; the caller asserts the correct selection afterwards.
+            bool outerSuppress = state.SuppressSelection;
+            state.SuppressSelection = true;
+            try
             {
-                FlurryAssetPath target;
-                lock (state.BaseLock)
+                foreach (FlurryAssetPath node in traversalStack.Skip(1))
                 {
-                    target = node.Clone ?? node;
-                    target.LazyLoadChildren();
-                }
+                    FlurryAssetPath target;
+                    lock (state.BaseLock)
+                    {
+                        target = node.Clone ?? node;
+                        target.LazyLoadChildren();
+                    }
 
-                if (container != null)
-                {
-                    container.IsExpanded = true;
-                    container.UpdateLayout();
-                    await Dispatcher.Yield(DispatcherPriority.Loaded);
+                    if (container != null)
+                    {
+                        container.IsExpanded = true;
+                        container.UpdateLayout();
+                        await Dispatcher.Yield(DispatcherPriority.Loaded);
+                        if (state.SelectGeneration != selectGen)
+                            return null;
+
+                        await ForceRealizeItem(container, target, state, selectGen);
+                        if (state.SelectGeneration != selectGen)
+                            return null;
+
+                        container = await GetContainerFromItemAsync<TreeViewItem>(container, target, state, selectGen);
+                    }
+                    else if (node.Parent == state.Root)
+                    {
+                        await ForceRealizeItem(treeView, target, state, selectGen);
+                        if (state.SelectGeneration != selectGen)
+                            return null;
+
+                        container = await GetContainerFromItemAsync<TreeViewItem>(treeView, target, state, selectGen);
+                    }
+
                     if (state.SelectGeneration != selectGen)
                         return null;
-
-                    await ForceRealizeItem(container, target, state, selectGen);
-                    if (state.SelectGeneration != selectGen)
-                        return null;
-
-                    container = await GetContainerFromItemAsync<TreeViewItem>(container, target, state, selectGen);
                 }
-                else if (node.Parent == state.Root)
-                {
-                    await ForceRealizeItem(treeView, target, state, selectGen);
-                    if (state.SelectGeneration != selectGen)
-                        return null;
-
-                    container = await GetContainerFromItemAsync<TreeViewItem>(treeView, target, state, selectGen);
-                }
-
-                if (state.SelectGeneration != selectGen)
-                    return null;
+            }
+            finally
+            {
+                state.SuppressSelection = outerSuppress;
             }
             return container;
         }

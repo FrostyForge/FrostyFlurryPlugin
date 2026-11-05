@@ -132,7 +132,10 @@ namespace Flurry.Editor.Patches
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             if (!state.SuppressSelection)
+            {
                 state.SelectGeneration++;
+                var selNode = e.NewValue as DataExplorer.FlurryAssetPath;
+            }
             if (e.NewValue != null && state.DesiredSelectionPath != null)
             {
                 state.DesiredSelectionPath = null;
@@ -164,7 +167,9 @@ namespace Flurry.Editor.Patches
 
             FlurryExplorerState state = FlurryExplorerEngine.GetState(__instance);
             if (!state.SuppressSelection)
+            {
                 state.SelectGeneration++;
+            }
         }
 
         [HarmonyPatch("BuildFilterData")]
