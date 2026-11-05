@@ -82,7 +82,7 @@ namespace Flurry.Editor
             ReferencesTabTweaks = Config.Get<bool>("Flurry.ReferencesTabTweaks", true);
             BundlesTabTweaks = Config.Get<bool>("Flurry.BundlesTabTweaks", true);
             KyberIntegration = Config.Get<bool>("Flurry.KyberIntegration", true);
-            DataExplorerFastMode = Config.Get<bool>("Flurry.DataExplorerFastMode", false);
+            DataExplorerFastMode = Config.Get<bool>("Flurry.DataExplorerFastMode", true);
         }
 
         public override void Save()

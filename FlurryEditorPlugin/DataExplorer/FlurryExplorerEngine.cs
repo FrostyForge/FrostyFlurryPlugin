@@ -1079,7 +1079,6 @@ namespace Flurry.Editor.DataExplorer
                 }
             }
 
-
             await ctrl.Dispatcher.InvokeAsync(async () =>
             {
                 try
@@ -1103,8 +1102,6 @@ namespace Flurry.Editor.DataExplorer
                         await ClearFiltersForSelectionAsync(ctrl, state, selectGen);
                         if (state.SelectGeneration != selectGen)
                         {
-                            var treeNode = AssetTreeViewRef(ctrl)?.SelectedItem as FlurryAssetPath;
-                            var listNode = AssetListViewRef(ctrl)?.SelectedItem as AssetEntry;
                             return;
                         }
                     }
@@ -1189,8 +1186,6 @@ namespace Flurry.Editor.DataExplorer
                         {
                             state.SuppressSelection = false;
                         }
-
-                        AssetEntry listSelected = assetListView.SelectedItem as AssetEntry;
                     }
 
                     if (state.SelectGeneration != selectGen)

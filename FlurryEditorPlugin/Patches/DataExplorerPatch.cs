@@ -134,7 +134,6 @@ namespace Flurry.Editor.Patches
             if (!state.SuppressSelection)
             {
                 state.SelectGeneration++;
-                var selNode = e.NewValue as DataExplorer.FlurryAssetPath;
             }
             if (e.NewValue != null && state.DesiredSelectionPath != null)
             {
