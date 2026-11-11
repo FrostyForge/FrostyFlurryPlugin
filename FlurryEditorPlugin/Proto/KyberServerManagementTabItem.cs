@@ -82,6 +82,12 @@ namespace Flurry.Editor.KyberAPI
         {
             base.OnApplyTemplate();
 
+            FlurryEditorConfig config = new FlurryEditorConfig();
+            config.Load();
+
+            if (!config.KyberIntegration || ProfilesLibrary.DataVersion != (int)ProfileVersion.StarWarsBattlefrontII)
+                return;
+
             loggedInAs = GetTemplateChild("PART_LoggedInAs") as TextBlock;
             consoleOutput = GetTemplateChild("ConsoleOutputTextBox") as TextBox;
             consoleInput = GetTemplateChild("ConsoleInputTextBox") as TextBox;
@@ -307,6 +313,12 @@ namespace Flurry.Editor.KyberAPI
         {
             return await Task.Run(() =>
             {
+                FlurryEditorConfig config = new FlurryEditorConfig();
+                config.Load();
+                if (!config.KyberIntegration)
+                {
+                    return "";
+                }
                 App.Logger.Log("Getting Kyber auth token from CLI...");
                 Process process = Process.Start(new ProcessStartInfo
                 {

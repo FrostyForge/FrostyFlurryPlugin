@@ -507,6 +507,38 @@ namespace Flurry.Editor.Patches
                 bookmarksContextMenu.Items.Add(copyFilePathOption);
             }
             #endregion
+
+            #region Kyber Server manager tab - order and enable/disable
+            TabControl tabControl = __instance.MiscTabControl;
+            if (tabControl != null)
+            {
+                // Find the Kyber tab
+                TabItem kyberTab = null;
+                foreach (var item in tabControl.Items)
+                {
+                    if (item is TabItem tabItem && tabItem.Header.ToString() == "Kyber Server")
+                    {
+                        kyberTab = tabItem;
+                        break;
+                    }
+                }
+                if (kyberTab != null)
+                {
+                    // Move the Kyber tab to the end
+                    tabControl.Items.Remove(kyberTab);
+
+                    // Only add it back if enabled.
+                    if (config.KyberIntegration && ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII)
+                    {
+                        tabControl.Items.Add(kyberTab);
+                    }
+                }
+                else
+                {
+                    App.Logger.LogError("Could not find kyber server tabitem");
+                }
+            }
+            #endregion
         }
 
         class ExportModMenuItemCommand_AlwaysCanExecute : ICommand
