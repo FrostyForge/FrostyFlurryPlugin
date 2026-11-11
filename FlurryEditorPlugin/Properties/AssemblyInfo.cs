@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using Flurry.Editor;
 using Frosty.Core;
+using Flurry.Editor.KyberAPI;
 
 // Setting ComVisible to false makes the types in this assembly not visible
 // to COM components.  If you need to access a type in this assembly from
@@ -31,3 +32,5 @@ using Frosty.Core;
 [assembly: RegisterMenuExtension(typeof(LoadOrderEditorMenuExt), PluginManagerType.Editor)]
 [assembly: RegisterMenuExtension(typeof(ExportBinaryFileHashesExt), PluginManagerType.Editor)]
 //[assembly: RegisterDataExplorerContextMenu(typeof(XmlDiffGeneratorExtension))]
+[assembly: RegisterTabExtension(typeof(KyberServerManagementTabExtension))]
+[assembly: RegisterStartupAction(typeof(AuthInitStartupAction))]

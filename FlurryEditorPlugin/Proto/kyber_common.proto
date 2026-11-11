@@ -1,0 +1,36 @@
+syntax = "proto3";
+package kyber_common;
+option go_package = "github.com/ArmchairDevelopers/Kyber/API/api/v1/pbcommon;pbcommon";
+
+message Empty {}
+
+message LevelSetup {
+  string map = 1;
+  string mode = 2;
+  optional string mapName = 3;
+  optional string modeName = 4;
+}
+
+message ServerPlayer {
+  string id = 1;
+  string name = 2;
+  // 1 = light side, 2 = dark side
+  uint32 teamId = 3;
+}
+
+message KyberPlayer {
+  string id = 1;
+  string name = 2;
+}
+
+
+message ServerMod {
+  // The mod's name
+  string name = 1;
+  // The mod's version
+  string version = 2;
+  // The mod's download link
+  optional string link = 3;
+  // The size of the .fbmod file
+  uint64 fileSize = 4;
+}

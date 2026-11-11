@@ -1,0 +1,181 @@
+syntax = "proto3";
+package kyber_interface;
+
+import "Proto/kyber_common.proto";
+import "Proto/kyber_api.proto";
+
+service LauncherCommon {
+  rpc Initialize(kyber_common.Empty) returns (InitializeRequest);
+  rpc GetCustomLevelData(CustomLevelDataRequest) returns (CustomLevelDataResponse);
+  rpc OnServerJoined(kyber_common.Empty) returns (kyber_common.Empty);
+  rpc OnServerLeft(kyber_common.Empty) returns (kyber_common.Empty);
+}
+
+service Common {
+  rpc GetInfo(kyber_common.Empty) returns (CommonState);
+
+  rpc RunCommand(RunCommandRequest) returns (kyber_common.Empty);
+}
+
+service Client {
+  rpc JoinServer(JoinServerRequest) returns (kyber_common.Empty);
+
+  rpc GetVoipSettings(kyber_common.Empty) returns (VoipSettings);
+  rpc SetVoipSettings(SetVoipSettingsRequest) returns (kyber_common.Empty);
+}
+
+service Server {
+  // Server state RPCs
+  rpc StartServer(StartServerRequest) returns (ServerState);
+
+  // RPCs for modifying a running server
+  rpc LoadLevel(LoadLevelRequest) returns (kyber_common.Empty);
+
+  // Global RPCs
+  rpc SetProxyList(SetProxyListRequest) returns (kyber_common.Empty);
+
+  // Moderation RPCs
+  //rpc KickPlayer(KickPlayerRequest) returns (kyber_common.Empty);
+  //rpc BanPlayer(BanPlayerRequest) returns (kyber_common.Empty);
+  //rpc UnbanPlayer(BanPlayerRequest) returns (kyber_common.Empty);
+}
+
+message CustomLevelDataRequest {
+  string map = 1;
+  string mode = 2;
+}
+
+message CustomLevelDataResponse {
+  optional string mapName = 1;
+  optional string modeName = 2;
+}
+
+// Common
+
+message ProxyList {
+  // The internal ID of the proxy
+  string id = 1;
+  // The IP of the proxy
+  string ip = 2;
+}
+
+message ModData {
+  // Absolute path to base folder containing mod files
+  string basePath = 1;
+  // Mod paths relative to the base path.
+  // These must not go outside the base path:
+  // Having a mod inside folder A, and providing A/B
+  // as the base path and then ../C.fbmod is not supported
+  repeated string modPaths = 2;
+  // This list will be sent to the API to register mods
+  // This must be separate because of mod collections
+  repeated kyber_common.ServerMod mods = 3;
+  // This list also needs to be sent to the API
+  // Includes mods from frosty collections
+  repeated kyber_common.ServerMod explodedMods = 4;
+}
+
+message InitializeRequest {
+  repeated ProxyList proxyList = 1;
+
+  oneof startState {
+    StartServerRequest startServer = 2;
+    JoinServerRequest joinServer = 3;
+  };
+
+  ModData modData = 4;
+
+  // These commands are run in the event of startState.startServer,
+  // when the level is finished loading
+  repeated string startupCommands = 5;
+}
+
+// ClientState
+
+enum JoinServerType {
+  DIRECT = 0;
+  PROXIED = 1;
+}
+
+message JoinServerRequest {
+  // The ID of the server to join, if not present
+  // it's assumed the server does not require
+  // a join token
+  optional string id = 1;
+  // Denotes whether ip/port are for the server or a Kyber proxy
+  JoinServerType type = 2;
+  // The IP or proxy IP of the server to join
+  string ip = 3;
+  // The port or proxy port of the server to join
+  uint32 port = 4;
+  // Whether the client wants to spectate
+  bool spectate = 5;
+  // The join token to use when joining the server
+  string joinToken = 6;
+}
+
+message VoipDevice {
+  string id = 1;
+  string name = 2;
+}
+
+message VoipSettings {
+  repeated VoipDevice inputDevices = 1;
+  repeated VoipDevice outputDevices = 2;
+}
+
+message SetVoipSettingsRequest {
+  bool enabled = 1;
+
+  string inputDeviceId = 2;
+  string outputDeviceId = 3;
+
+  float inputVolume = 4;
+  float outputVolume = 5;
+
+  bool pushToTalkEnabled = 6;
+  optional int32 pushToTalkKey = 7;
+}
+
+// ServerState
+
+message StartServerRequest {
+  repeated kyber_common.LevelSetup mapRotation = 1;
+  string name = 2;
+  string password = 3;
+  string description = 4;
+  uint32 maxPlayers = 5;
+  bool proximityChat = 6;
+}
+
+message LoadLevelRequest {
+  kyber_common.LevelSetup levelSetup = 1;
+}
+
+message CommonState {
+  bool vivoxInitialized = 1;
+
+  oneof body {
+    ClientState client = 2;
+    ServerState server = 3;
+  }
+}
+
+message ClientState {
+  string serverId = 1;
+}
+
+message ServerState {
+  string id = 1;
+  kyber_common.LevelSetup levelSetup = 2;
+  uint32 mapRotationIndex = 3;
+  repeated kyber_common.ServerPlayer playerList = 4;
+}
+
+message SetProxyListRequest {
+  kyber_api.ProxyList proxyList = 1;
+}
+
+message RunCommandRequest {
+  string command = 1;
+}

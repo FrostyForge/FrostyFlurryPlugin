@@ -28,6 +28,7 @@ using System.Windows.Media.Imaging;
 using System.Xml;
 using Formatting = Newtonsoft.Json.Formatting;
 using Flurry.Editor.Windows;
+using Flurry.Editor.KyberAPI;
 
 namespace Flurry.Editor.Patches
 {
@@ -322,9 +323,11 @@ namespace Flurry.Editor.Patches
                 //  Execute kyber_cli.exe
                 //
                 int randomNumber = random.Next();
+                Guid randGuid = Guid.NewGuid();
+                KyberServerManagementTabItem.SetTargetServerGuidName(randGuid.ToString());
                 string cliCommand = (KyberSettings.FrontendLaunch ? "start_game" : "start_server") + $" --module-branch={KyberSettings.ModuleBranch} --raw-mods \"{$@"{basePath}/Kyber-Launch.json"}\"" + (KyberSettings.DebugMode ? " --verbose --debug" : "");
                 if (!KyberSettings.FrontendLaunch)
-                    cliCommand += $" --server-password \"FlurryPlugin{randomNumber}\" --no-dedicated --server-name \"Test\" --map \"{KyberSettings.Level}\" --mode \"{KyberSettings.GameMode}\" --startup-commands \"{$@"{basePath}/Kyber-Commands.txt"}\"";
+                    cliCommand += $" --server-password \"FlurryPlugin{randomNumber}\" --no-dedicated --server-name \"{randGuid}\" --map \"{KyberSettings.Level}\" --mode \"{KyberSettings.GameMode}\" --startup-commands \"{$@"{basePath}/Kyber-Commands.txt"}\"";
                 App.Logger.Log(cliCommand);
 
                 ProcessStartInfo psi = new ProcessStartInfo(KyberSettings.CliDirectory);

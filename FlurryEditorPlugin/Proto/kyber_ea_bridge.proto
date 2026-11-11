@@ -1,0 +1,71 @@
+syntax = "proto3";
+package kyber_ea_bridge;
+
+import "Proto/kyber_common.proto";
+option go_package = "github.com/ArmchairDevelopers/Kyber/API/api/v1/pbea;pbea";
+
+service Statistics {
+  rpc GetStats(EAStatsRequest) returns (EAStatsResponse);
+}
+
+service Users {
+  rpc Search(EAUserSearchRequest) returns (EAUserList);
+  rpc SearchUser(EaUserPdSearchRequest) returns (EAUser);
+}
+
+// Statistics
+
+enum EAPlatform {
+  PC = 0;
+  XBOXONE = 1;
+  PS4 = 2;
+}
+
+message EAStatsRequest {
+  // The persona ID of the player to retrieve stats for
+  string personaId = 1;
+  // The platform of the player
+  EAPlatform platform = 2;
+}
+
+message EAStatsResponse {
+  // User stats
+  map<string, double> stats = 1;
+}
+
+// Users
+
+message EaUserPdSearchRequest {
+  // The persona ID of the player to search for
+  string personaId = 1;
+}
+
+message EAUserSearchRequest {
+  uint32 pageNumber = 1;
+  uint32 pageSize = 2;
+  string searchText = 3;
+}
+
+message EAImage {
+  uint32 height = 1;
+  uint32 width = 2;
+  string path = 3;
+}
+
+message EAAvatarList {
+  EAImage large = 1;
+  EAImage medium = 2;
+  EAImage small = 3;
+}
+
+message EAUser {
+  string id = 1;
+  string personaId = 2;
+  string displayName = 3;
+  string uniqueName = 4;
+  EAAvatarList avatar = 5;
+}
+
+message EAUserList {
+  repeated EAUser users = 1;
+}

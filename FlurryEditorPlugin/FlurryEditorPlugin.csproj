@@ -16,10 +16,29 @@
         <Costura>
           <!-- Only embed these runtime assemblies -->
           <IncludeAssemblies>
-            DiffPlex
-            DiffPlex.Wpf
-            0Harmony
-          </IncludeAssemblies>
+			  DiffPlex
+			  DiffPlex.Wpf
+			  0Harmony
+			  Grpc.Net.Client
+			  Grpc.Core.Api
+			  Google.Protobuf
+			  Tomlyn
+			  System.Text.Json
+			  System.Memory
+			  System.Runtime.CompilerServices.Unsafe
+			  Microsoft.Extensions.Logging.Abstractions
+			  Grpc.Net.Common
+			  System.Net.Http.WinHttpHandler
+			  System.Diagnostics.DiagnosticSource
+			  System.Buffers
+			  System.Numerics.Vectors
+			  System.Threading.Tasks.Extensions
+			  System.Text.Encodings.Web
+			  System.IO.Pipelines
+			  System.Collections.Immutable
+			  Microsoft.Extensions.DependencyInjection.Abstractions
+			  Microsoft.Bcl.AsyncInterfaces
+		  </IncludeAssemblies>
         </Costura>
       </Weavers>
     </WeaverConfiguration>
@@ -55,30 +74,33 @@
     </PackageReference>
     <PackageReference Include="DiffPlex.Wpf" Version="1.9.1" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.85.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.85.0" />
+    <PackageReference Include="Tomlyn" Version="2.10.2" />
+	<PackageReference Include="System.Text.Json" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyControls\FrostyControls.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyControls\FrostyControls.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyHash\FrostyHash.vcxproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyHash\FrostyHash.vcxproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyPlugin\FrostyCore.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyPlugin\FrostyCore.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostySdk\FrostySdk.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostySdk\FrostySdk.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyEditor\FrostyEditor.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyEditor\FrostyEditor.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference
-      Include="D:\Frosty\FrostyToolsuite\Plugins\ReferencesPlugin\ReferencesPlugin.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\Plugins\ReferencesPlugin\ReferencesPlugin.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference
-      Include="D:\Frosty\FrostyToolsuite\Plugins\BundleEditorPlugin\BundleEditorPlugin.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\Plugins\BundleEditorPlugin\BundleEditorPlugin.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
@@ -102,5 +124,9 @@
       <Exec Command="xcopy /Y $(TargetPath) $(SolutionDir)$(OutDir)Plugins\" />
     </Target>
   -->
+
+  <ItemGroup>
+		<Protobuf Include="Proto\*.proto" AdditionalImportDirs="Proto\" GrpcServices="Client" />
+	</ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@
     xmlns:core="clr-namespace:Frosty.Core.Controls;assembly=FrostyCore"
     xmlns:ctrl="clr-namespace:Frosty.Controls;assembly=FrostyControls"
     xmlns:local="clr-namespace:Flurry.Editor.Editors"
+    xmlns:kbapi="clr-namespace:Flurry.Editor.KyberAPI"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:fdev="FrostyDeveloper">
 
@@ -45,6 +46,69 @@
 									ClassViewVisible="True" />
                             </Grid>
                         </ctrl:FrostyDockablePanel>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="{x:Type kbapi:KyberServerManagementTabItem}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type kbapi:KyberServerManagementTabItem}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Margin="10" Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock x:Name="PART_LoggedInAs" Text="Logged in as [loading]" Grid.Row="0"></TextBlock>
+                            <!-- Console Output Area -->
+                            <TextBox x:Name="ConsoleOutputTextBox"
+                                    Grid.Row="1"
+                                    IsReadOnly="True"
+                                    TextWrapping="Wrap"
+                                    AcceptsReturn="True"
+                                    VerticalScrollBarVisibility="Auto"
+                                    Background="{StaticResource ControlBackground}"
+                                    Foreground="{StaticResource FontColor}"
+                                    FontFamily="Consolas"
+                                    FontSize="10"
+                                    Padding="5"
+                                    Margin="0,0,0,10" />
+
+                            <!-- Console Input Area -->
+                            <TextBox x:Name="ConsoleInputTextBox"
+                                    Grid.Row="2"
+                                    Background="{StaticResource ControlBackground}"
+                                    Foreground="{StaticResource FontColor}"
+                                    FontFamily="Consolas"
+                                    FontSize="10"
+                                    Padding="5"
+                                    Height="30" />
+                        </Grid>
+                        <Grid Margin="10" Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <DockPanel LastChildFill="False" Grid.Row="0">
+                                <Label Content="Gamemode " FontFamily="Global User Interface" FontSize="10"/>
+                                <ComboBox x:Name="gamemodeComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1" Width="200" Height="30"/>
+                                <Label Content="Level " FontFamily="Global User Interface" FontSize="10"/>
+                                <ComboBox x:Name="levelComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1" Width="200" Height="30"/>
+                            </DockPanel>
+                            <DockPanel Grid.Row="1" LastChildFill="False">
+                                <Button x:Name="loadSelectedLevelButton" Content="Load Level" Margin="1" />
+                            </DockPanel>
+                        </Grid>
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>

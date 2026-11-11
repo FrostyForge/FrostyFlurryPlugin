@@ -1,0 +1,1171 @@
+syntax = "proto3";
+package kyber_api;
+
+import "Proto/kyber_common.proto";
+option go_package = "github.com/ArmchairDevelopers/Kyber/API/api/v1/pbapi;pbapi";
+
+service Authentication {
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Verify(kyber_common.Empty) returns (VerifyResponse);
+
+  rpc ResetToken(kyber_common.Empty) returns (kyber_common.Empty);
+
+  rpc PatreonLogin(AuthCodeRequest) returns (UserVerificationResponse);
+  rpc LinkPatreonAccount(LinkPatreonAccountRequest) returns (kyber_common.Empty);
+  rpc UnlinkPatreonAccount(kyber_common.Empty) returns (kyber_common.Empty);
+
+  rpc UnlinkDiscordAccount(kyber_common.Empty) returns (kyber_common.Empty);
+}
+
+service Launcher {
+  rpc Versions(ServiceVersionsRequest) returns (ServiceVersionsResponse);
+  rpc DownloadUrl(ServiceVersionDownloadUrlRequest) returns (ServiceVersionDownloadUrl);
+
+  rpc PatronList(kyber_common.Empty) returns (PatronListResponse);
+  rpc QueryHostedMods(QueryHostedModsRequest) returns (HostedModsResponse);
+
+  rpc UploadMod(stream ModUploadRequest) returns(stream kyber_common.Empty);
+
+  rpc GetLauncherConfig(kyber_common.Empty) returns (LauncherConfigResponse);
+
+  rpc GetPreloadedMods(kyber_common.Empty) returns (PreloadedModsResponse);
+
+  //rpc GetEventFeed(kyber_common.Empty) returns (EventFeedResponse);
+}
+
+service ClientServer {
+  rpc CreateJoinToken(JoinTokenRequest) returns (JoinTokenResponse);
+  rpc ConsumeJoinToken(ConsumeJoinTokenRequest)
+      returns (ConsumeJoinTokenResponse);
+  rpc GetBlacklist(kyber_common.Empty) returns (EventSyncBlacklistResponse);
+  rpc GetChatFilter(kyber_common.Empty) returns (ChatFilterResponse);
+}
+
+service Proxy {
+  rpc EventSubscription(ProxyEventSubscriptionRequest) returns (stream ProxyAPIEvent);
+
+  rpc GetList(kyber_common.Empty) returns (ProxyList);
+}
+
+service ServerManagement {
+  // Launcher <-> API
+  rpc UnbanPlayer(UnbanPlayerRequest) returns (kyber_common.Empty);
+  rpc GetPunishments(PunishmentsRequest) returns (PunishmentsResponse);
+  rpc ModeratedServers(kyber_common.Empty) returns (ServerList);
+
+  rpc KickPlayer(ServerKickPlayerRequest) returns (kyber_common.Empty);
+  rpc BanPlayer(ServerBanPlayerRequest) returns (kyber_common.Empty);
+  rpc SetMapRotation(ServerSetMapRotationRequest) returns (kyber_common.Empty);
+  rpc RunCommand(ServerRunCommandRequest) returns (kyber_common.Empty);
+
+  rpc AddModerator(AddModeratorRequest) returns (kyber_common.Empty);
+  rpc RemoveModerator(RemoveModeratorRequest) returns (kyber_common.Empty);
+  rpc GetModerators(ModeratorsRequest) returns (ModeratorList);
+}
+
+service Statistics {
+  rpc SearchUser(StatsSearchRequest) returns (StatsSearchResponse);
+  rpc GetStats(StatsRequest) returns (StatsResponse);
+  rpc UpdateStats(UpdateStatsRequest) returns (kyber_common.Empty);
+}
+
+service ServerBrowser {
+  // Launcher/Proxy <-> API
+  rpc GetServers(ServerListRequest) returns (ServerList);
+  rpc GetServer(ServerRequest) returns (Server);
+  rpc CanJoinServer(CanJoinServerRequest) returns (CanJoinServerResponse);
+  rpc ValidateServer(RegisterServerRequest) returns (kyber_common.Empty);
+  rpc CheckModImages(CheckModImagesRequest) returns (CheckModImagesResponse);
+  rpc UploadModImages(UploadModImagesRequest) returns (kyber_common.Empty);
+
+  // Kyber <-> API
+  rpc RegisterServer(RegisterServerRequest) returns (RegisterServerResponse);
+  rpc UpdateServer(UpdateServerRequest) returns (kyber_common.Empty);
+}
+
+service Voip {
+  rpc Login(kyber_common.Empty) returns (VoipLoginResponse);
+  rpc JoinChannel(VoipJoinChannelRequest) returns (VoipJoinChannelResponse);
+}
+
+service ReportService {
+  // Player-facing
+  rpc CreateReport(CreateReportRequest) returns (kyber_common.Empty);
+  rpc SearchUser(SearchUserRequest) returns (SearchUserResponse);
+  rpc GenerateEvidenceLinks(GenerateEvidenceLinksRequest) returns (GenerateEvidenceLinksResponse);
+
+  // Moderator-facing
+  rpc ListReports(kyber_common.Empty) returns (ListReportsResponse);
+  rpc GetUserReports(GetReportRequest) returns (GetReportResponse);
+  rpc UpdateStatus(UpdateStatusRequest) returns (kyber_common.Empty);
+  rpc ApproveReports(ApproveReportsRequest) returns (kyber_common.Empty);
+  rpc RejectReport(RejectReportRequest) returns (kyber_common.Empty);
+  rpc GetUserInfo(UserInfoRequest) returns (UserInfoResponse);
+}
+
+service Party {
+  rpc LeaveParty(kyber_common.Empty) returns (kyber_common.Empty);
+
+  rpc InvitePlayer(InvitePlayerRequest) returns (kyber_common.Empty);
+  rpc AcceptInvite(AcceptInviteRequest) returns (kyber_common.Empty);
+  rpc DeclineInvite(DeclineInviteRequest) returns (kyber_common.Empty);
+
+  rpc KickMember(KickMemberRequest) returns (kyber_common.Empty);
+  rpc TransferLeader(TransferLeaderRequest) returns (kyber_common.Empty);
+
+  rpc GetParty(kyber_common.Empty) returns (GetPartyResponse);
+
+  rpc StartJoinGame(StartJoinGameRequest) returns (kyber_common.Empty);
+  rpc CancelJoinGame(kyber_common.Empty) returns (kyber_common.Empty);
+}
+
+service ServerQueue {
+  rpc JoinQueue(JoinQueueRequest) returns (QueueStatus);
+  rpc LeaveQueue(kyber_common.Empty) returns (kyber_common.Empty);
+  rpc GetQueueStatus(kyber_common.Empty) returns (GetQueueStatusResponse);
+}
+
+// SessionService
+
+message CheckForUpdatesEvent {}
+
+message ChatFilterResponse {
+  repeated string phrases = 1;
+}
+
+message ProxiesUpdatedEvent {
+  repeated ProxyInfo proxies = 1;
+}
+
+message SessionEvent {
+  oneof body {
+    PartyEvent partyEvent = 1;
+    CheckForUpdatesEvent checkForUpdates = 2;
+    ProxiesUpdatedEvent proxiesUpdated = 3;
+    QueueEvent queueEvent = 4;
+  }
+}
+
+// ServerQueueService
+
+enum QueueEntryState {
+  QUEUE_STATE_WAITING = 0;
+  QUEUE_STATE_RESERVED = 1;
+}
+
+enum QueueRemovedReason {
+  QUEUE_REMOVED_LEFT = 0;
+  QUEUE_REMOVED_SERVER_SHUTDOWN = 1;
+  QUEUE_REMOVED_TIMEOUT = 2;
+}
+
+message QueueStatus {
+  string serverId = 1;
+  uint32 position = 2;
+  uint32 queueSize = 3;
+  QueueEntryState state = 4;
+}
+
+message JoinQueueRequest {
+  string serverId = 1;
+  string password = 2;
+}
+
+message GetQueueStatusResponse {
+  optional QueueStatus status = 1;
+}
+
+message QueueUpdatedEvent {
+  QueueStatus status = 1;
+}
+
+message QueueRemovedEvent {
+  string serverId = 1;
+  QueueRemovedReason reason = 2;
+}
+
+message QueueEvent {
+  oneof body {
+    QueueUpdatedEvent queueUpdated = 1;
+    QueueRemovedEvent queueRemoved = 2;
+  }
+}
+
+message SessionClientEvent {
+  oneof body {
+    UpdateJoinGameStatusEvent updateJoinGameStatus = 1;
+    JoinGameReadyEvent joinGameReady = 2;
+    GameJoinedEvent gameJoined = 3;
+    GameLeftEvent gameLeft = 4;
+  }
+}
+
+message GameJoinedEvent {
+  string serverId = 1;
+}
+
+message GameLeftEvent {}
+
+message UpdateJoinGameStatusEvent {
+  bool hasMods = 1;
+  optional uint32 modDownloadPercentage = 2;
+}
+
+// PartyService
+
+message GetPartyResponse {
+  optional PartyState party = 1;
+}
+
+message InvitePlayerRequest {
+  string userId = 1;
+}
+
+message AcceptInviteRequest {
+  uint64 partyId = 1;
+  // string inviteToken = 2;
+}
+
+message DeclineInviteRequest {
+  uint64 partyId = 1;
+  // string inviteToken = 2;
+}
+
+message CreatePartyResponse {
+  uint64 partyId = 1;
+}
+
+message PartyState {
+  uint64 id = 1;
+  string leaderId = 2;
+  repeated PartyMember members = 3;
+  int64 createdAt = 4;
+  optional JoinGameState joinGameState = 5;
+}
+
+message KickMemberRequest {
+  string userId = 1;
+}
+
+message TransferLeaderRequest {
+  string userId = 1;
+}
+
+message JoinGameState {
+  string serverId = 1;
+  string serverName = 2;
+  repeated kyber_common.ServerMod mods = 3;
+  repeated JoinGameMemberStatus memberStatuses = 4;
+  optional string password = 5;
+  optional QueueStatus queue = 6;
+}
+
+message JoinGameMemberStatus {
+  string userId = 1;
+  bool hasMods = 2;
+  optional uint32 modDownloadPercentage = 3;
+  bool joined = 4;
+}
+
+message PartyMember {
+  kyber_common.KyberPlayer player = 1;
+  int64 joinedAt = 2;
+}
+
+message PartyEvent {
+  oneof body {
+    InviteReceivedEvent inviteReceived = 1;
+    InviteAcceptedEvent inviteAccepted = 2;
+    InviteDeclinedEvent inviteDeclined = 3;
+    MemberJoinedEvent memberJoined = 4;
+    MemberLeftEvent memberLeft = 5;
+    JoinGameEvent joinGame = 6;
+    JoinGameStatusEvent joinGameStatus = 7;
+    JoinGameReadyEvent joinGameReady = 8;
+    JoinGameCancelledEvent joinGameCancelled = 9;
+    NewLeaderEvent newLeader = 10;
+    KickedEvent kicked = 11;
+  }
+}
+
+message KickedEvent {
+  string userId = 1;
+}
+
+message NewLeaderEvent {
+  string newLeaderId = 1;
+}
+
+message InviteReceivedEvent {
+  uint64 partyId = 1;
+  kyber_common.KyberPlayer inviter = 2;
+  string inviteToken = 3;
+  int64 expiresAt = 4;
+  uint32 partySize = 5;
+}
+
+message InviteAcceptedEvent {
+  kyber_common.KyberPlayer user = 1;
+}
+
+message InviteDeclinedEvent {
+  kyber_common.KyberPlayer user = 1;
+}
+
+message MemberJoinedEvent {
+  kyber_common.KyberPlayer user = 1;
+}
+
+message MemberLeftEvent {
+  string userId = 1;
+}
+
+message JoinGameEvent {
+  string serverId = 1;
+  string serverName = 2;
+  repeated kyber_common.ServerMod mods = 3;
+  string leaderId = 4;
+  optional string password = 5;
+  optional QueueStatus queue = 6;
+}
+
+message JoinGameStatusEvent {
+  string userId = 1;
+  bool hasMods = 2;
+  optional uint32 modDownloadPercentage = 3;
+  bool joined = 4;
+}
+
+message JoinGameReadyEvent {
+  string serverId = 1;
+}
+
+message JoinGameCancelledEvent {}
+
+message StartJoinGameRequest {
+  string serverId = 1;
+  string password = 2;
+}
+
+// ReportService
+
+message UserInfoRequest {
+  string userId = 1;
+}
+
+message UserInfoResponse {
+  string userId = 1;
+  string username = 2;
+
+  int64 created = 3;
+  int64 lastSeen = 4;
+
+  uint64 loginCount = 5;
+  uint64 serversHosted = 6;
+  uint64 serversJoined = 7;
+
+  repeated string entitlements = 8;
+
+  string personaId = 9;
+  string nickname = 10;
+  string countryCode = 11;
+  repeated string deviceIds = 12;
+
+  bool isBanned = 13;
+  optional int64 banExpiresAt = 14;
+  optional string banReason = 15;
+}
+
+message GenerateEvidenceLinksRequest {
+  // <file_extension, count>
+  map<string, int32> fileExtensions = 1;
+}
+
+message GenerateEvidenceLinksResponse {
+  repeated string links = 1;
+}
+
+message CreateReportRequest {
+  CreateReportModel report = 1;
+}
+
+message CreateReportResponse {
+  string id = 1;
+}
+
+message SearchUserRequest {
+  string query = 1;
+}
+
+message SearchUserResponse {
+  repeated kyber_common.KyberPlayer users = 1;
+}
+
+enum ReportState {
+  OPEN = 0;
+  CLOSED = 1;
+}
+
+message PlayerReportSummary {
+  string targetUserId = 1;
+  string targetUsername = 2;
+  int32 totalReports = 3;
+  map<int32, int32> reportsByReason = 4; // ReportReason -> count
+  ReportStatus mostRecentStatus = 5;
+  ReportState state = 6;
+  int64 latestReportTime = 7;
+}
+
+message ListReportsResponse {
+  repeated PlayerReportSummary reports = 1;
+}
+
+message GetReportRequest {
+  string playerId = 1;
+  ReportState state = 2;
+}
+
+message GetReportResponse {
+  string playerId = 1;
+  string playerName = 2;
+  repeated Report reports = 3;
+  repeated Punishment punishments = 4;
+}
+
+message UpdateStatusRequest {
+  string id = 1;
+  ReportStatus status = 2;
+  string modNotes = 3;
+}
+
+message ApproveReportsRequest {
+  string playerId = 1;
+  string banMessage = 2;
+  uint64 banDuration = 3; // Duration in seconds, 0 for permanent ban
+}
+
+message RejectReportRequest {
+  string reportId = 1;
+}
+
+message CreateReportModel {
+  string reportedPlayerId = 1;
+  ReportReason reason = 2;
+  string description = 3;
+  repeated string evidenceLinks = 4;
+  repeated string evidenceIds = 5;
+}
+
+enum ReportStatus {
+  NEW = 0;
+  IN_PROGRESS = 1;
+  RESOLVED = 2;
+  REJECTED = 3;
+}
+
+enum ReportReason {
+  HACKING = 0;
+  TOXIC_BEHAVIOUR = 1;
+  GRIEFING = 2;
+  OTHER = 3;
+}
+
+message Report {
+  string id = 1;
+  string reporterId = 2;
+  string reporterName = 3;
+  string reportedPlayerId = 4;
+  string reportedPlayerName = 5;
+  ReportReason reason = 6;
+  string description = 7;
+  repeated string evidenceLinks = 8;
+  ReportStatus status = 9;
+  int64 createdAt = 10;
+  int64 updatedAt = 11;
+  repeated string notes = 12;
+  optional Punishment punishment = 13; // If a punishment was issued
+  repeated string s3EvidenceIds = 14;
+}
+
+// Authentication
+
+message LinkPatreonAccountRequest {
+  // Patreon ID of the user
+  string patreonId = 1;
+  // Patreon membership ID of the user
+  string membershipId = 2;
+  // EA Token
+  string token = 3;
+}
+
+// Message for requesting user verification
+message AuthCodeRequest {
+  string authCode = 1;   // Authorization code obtained from Patreon
+}
+
+// Message for user verification response
+message UserVerificationResponse {
+  // Patreon user ID
+  string userId = 1;
+  // Patreon membership ID of the user
+  string membershipId = 2;
+  // Patreon oauth token
+  TokenInfo tokenInfo = 3;
+}
+
+message TokenInfo {
+  string accessToken = 1;
+  uint64 expiresIn = 2;
+  string tokenType = 3;
+  string scope = 4;
+  string refreshToken = 5;
+  string version = 6;
+}
+
+message LoginRequest {
+  // EA Token
+  string token = 1;
+}
+
+message LoginResponse {
+  // User ID (Equal to EA ID)
+  string id = 1;
+  // Kyber Token
+  string token = 2;
+  // Username
+  string name = 3;
+  // Is Patreon user
+  bool isPatreon = 4;
+  // User Entitlements
+  repeated string entitlements = 5;
+  // Linked Discord Data if any
+  optional DiscordUserData discord = 6;
+}
+
+message DiscordUserData {
+  string id = 1;
+  string username = 2;
+  string discriminator = 3;
+  string avatarHash = 4;
+  string globalName = 5;
+}
+
+message VerifyResponse {
+  // User ID (Equal to EA ID)
+  string id = 1;
+  // Username
+  string name = 2;
+  // Discord Data if any
+  optional DiscordUserData discord = 6;
+}
+
+// Launcher
+
+message ServiceVersionsRequest {
+  // The ID of the service you want to download;
+  // eg KyberModule (Zip of Kyber.dll, vivoxsdk.dll, etc)
+  string id = 1;
+  // The release channel (branch)
+  string channel = 2;
+}
+
+message ServiceVersion {
+  string version = 1;
+  uint32 size = 3;
+  string date = 2;
+  bool is_latest = 4;
+}
+
+message ServiceVersionsResponse {
+  repeated ServiceVersion versions = 1;
+}
+
+message ServiceVersionDownloadUrlRequest {
+  string id = 1;
+  string channel = 2;
+  string version = 3;
+}
+
+message ServiceVersionDownloadUrl {
+  string id = 1;
+  string channel = 2;
+  string url = 3;
+}
+
+message PatronListResponse {
+  repeated string patronNames = 1;
+}
+
+message HostedModQueryItem {
+  // The Frosty display name of the mod
+  string name = 1;
+  // The mod's version
+  string version = 2;
+}
+
+message PreloadedModsResponse {
+  repeated PreloadedMod mods = 1;
+}
+
+message PreloadedMod {
+  string name = 1;
+  string version = 2;
+  string url = 3;
+  string hash = 4;
+}
+
+message ModUploadRequest {
+  bytes chunk = 1;
+  bool done = 2;
+}
+
+message QueryHostedModsRequest {
+  repeated HostedModQueryItem mods = 1;
+  optional string clientRegion = 2;
+}
+
+message LauncherConfigResponse {
+  // launcher ico url
+  optional string launcherIcon = 1;
+  repeated FeaturedMod featuredMods = 2;
+  repeated Post posts = 3;
+  map<string, string> defaultChannels = 4;
+}
+
+message FeaturedMod {
+  uint32 modId = 1;
+  uint64 fileId = 2;
+  string modInfo = 3;
+}
+
+message Post {
+  string header = 1;
+  string body = 2;
+  string link = 3;
+  string imageUrl = 4;
+  string iconUrl = 5;
+}
+
+message HostedModResponseItem {
+  // The Frosty display name of the mod
+  string name = 1;
+  // The mod's version
+  string version = 2;
+  // The mod's download URL
+  string url = 3;
+  // The mod's size in bytes
+  uint64 size = 4;
+}
+
+message HostedModsResponse {
+  repeated HostedModResponseItem mods = 1;
+}
+
+message EventFeedItem {
+  // The event's title
+  string title = 1;
+  // The event's image URL
+  string image = 2;
+  // The event's link URL
+  string link = 3;
+}
+
+message EventFeedResponse {
+  repeated EventFeedItem events = 1;
+}
+
+// ClientServer
+
+message EventSyncBlacklistResponse {
+  repeated string blacklistedEvents = 1;
+}
+
+message JoinTokenRequest {
+  // The server ID to create the token for
+  string server = 1;
+  // The server password
+  string password = 2;
+}
+
+message JoinTokenResponse {
+  // The created join token
+  string token = 1;
+}
+
+message ConsumeJoinTokenRequest {
+  // A join token
+  string token = 1;
+  // The server ID consuming the token,
+  // must match the server the token was
+  // created for
+  string server = 2;
+}
+
+message ConsumeJoinTokenResponse {
+  // The user's ID
+  string id = 1;
+  // The user's name
+  string name = 2;
+  // The user's party group ID
+  optional uint64 groupId = 3;
+}
+
+// Proxy
+
+message ProxyEventSubscriptionRequest {
+  // A proxy auth token
+  string token = 1;
+}
+
+message ProxyIDEvent {
+  string id = 1;
+}
+
+enum ProxyConnectionClosedReason {
+  FORCE_CLOSED = 0;
+  SERVER_NOT_FOUND = 1;
+}
+
+message ProxyCloseConnectionEvent {
+  string userId = 1;
+}
+
+message ProxyAPIEvent {
+  oneof body {
+    ProxyIDEvent proxyId = 1;
+    ProxyCloseConnectionEvent proxyCloseConnection = 2;
+  }
+}
+
+message ProxyInfo {
+  string id = 1;
+  string ip = 2;
+  string name = 3;
+  string flag = 4;
+  string region = 5;
+}
+
+message ProxyList {
+  repeated ProxyInfo proxies = 1;
+}
+
+// ServerManagement
+
+message UnbanPlayerRequest {
+  string userId = 1;
+  string serverId = 2;
+}
+
+message PunishmentsRequest {
+  string serverId = 1;
+}
+
+message PunishmentsResponse {
+  repeated Punishment punishments = 1;
+}
+
+message Punishment {
+  string id = 1;
+  PunishmentType type = 2;
+  optional string issuer = 3;
+  kyber_common.KyberPlayer user = 4;
+  string reason = 5;
+  uint64 issued_at = 6;
+  optional uint64 expires_at = 7;
+  optional string issuer_name = 8;
+  optional kyber_common.KyberPlayer moderator = 9;
+}
+
+enum PunishmentType {
+  KICK = 0;
+  BAN = 1;
+}
+
+// Server sends, client Receives
+message ServerManagementConsoleEvent {
+  string message = 1;
+
+  // If false, only moderators and the server host will receive the message
+  optional bool public = 2;
+}
+
+message ServerManagementPlayersEvent {
+  repeated kyber_common.ServerPlayer players = 1;
+}
+
+message ServerManagementKeepAliveEvent {}
+
+// Client sends, server Receives
+message ServerKickPlayerEvent {
+  string id = 1;
+  string reason = 2;
+}
+
+message ServerBanPlayerEvent {
+  string id = 1;
+  string reason = 2;
+}
+
+message ServerSetMapRotationEvent {
+  repeated kyber_common.LevelSetup rotation = 1;
+  uint32 current = 2;
+}
+
+message ServerRunCommandEvent {
+  string command = 1;
+}
+
+message ServerManagementAPIEvent {
+  oneof body {
+    ServerManagementConsoleEvent console = 5;
+    ServerManagementPlayersEvent players = 6;
+    ServerManagementKeepAliveEvent keepAlive = 7;
+  }
+}
+
+message ServerAPIEvent {
+  oneof body {
+    ServerKickPlayerEvent serverKick = 4;
+    ServerBanPlayerEvent serverBan = 5;
+    ServerSetMapRotationEvent serverMapRotation = 6;
+    ServerRunCommandEvent serverRunCommand = 7;
+  }
+}
+
+message ServerKickPlayerRequest {
+  // The server id
+  string id = 1;
+  // The user to kick
+  string userId = 2;
+  // The ban reason
+  string reason = 3;
+}
+
+message ServerBanPlayerRequest {
+  // The server id
+  string id = 1;
+  // The user to ban
+  string userId = 2;
+  // The ban reason
+  string reason = 3;
+  // The ban duration in seconds
+  optional uint64 duration = 4;
+}
+
+message ServerSetMapRotationRequest {
+  string id = 1;
+  repeated kyber_common.LevelSetup rotation = 2;
+  uint32 current = 3;
+}
+
+message ServerRunCommandRequest {
+  string id = 1;
+  string command = 2;
+}
+
+message AddModeratorRequest {
+  string id = 1;
+}
+
+message RemoveModeratorRequest {
+  string id = 1;
+}
+
+message ModeratorsRequest {
+  // The server ID to retrieve the moderators of
+  string serverId = 1;
+}
+
+message ModeratorList {
+  repeated kyber_common.KyberPlayer users = 1;
+}
+
+// Statistics
+
+enum StatsSource {
+  EA_PC = 0;
+  EA_XBOX = 1;
+  EA_PS4 = 2;
+  KYBER = 3;
+  PERSONAL = 4;
+}
+
+message StatsSearchRequest {
+  // The search query
+  string query = 1;
+}
+
+message StatsSearchResponse {
+  // The list of users matching the search query
+  repeated EAUser users = 1;
+}
+
+message EAUser {
+  // The user's EA ID
+  string id = 1;
+  // The user's persona ID
+  string personaId = 2;
+  // The user's name
+  string username = 3;
+  // The user's region
+  string region = 4;
+  // If the user has played on Kyber
+  bool isKyberUser = 5;
+}
+
+message StatsRequest {
+  // The source to pull stats from
+  StatsSource source = 1;
+  // The user ID to request stats for
+  string user = 2;
+  // The user's persona ID
+  string personaId = 3;
+}
+
+message StatsResponse {
+  // User stats
+  map<string, float> stats = 1;
+}
+
+message UpdateStatsRequest {
+  // The source to push stats to
+  StatsSource source = 1;
+  // The user ID to push stats for
+  string user = 2;
+  // The updated stats
+  map<string, float> stats = 3;
+}
+
+// Server Browser
+
+message ServerListRequest {
+  // Query servers with names that contain this string
+  string name = 1;
+  // The page
+  uint32 page = 2;
+}
+
+message ServerRequest {
+  // The server's ID
+  string id = 1;
+  // Set by the Kyber proxies to obtain
+  // access to the server's ip/port.
+  optional string token = 2;
+}
+
+message CanJoinServerRequest {
+  // The server's ID
+  string id = 1;
+  // The server's password
+  string password = 2;
+}
+
+enum JoinDeniedReason {
+  INVALID_PASSWORD = 0;
+  BANNED = 1;
+  SERVER_FULL = 2;
+}
+
+message BanInfo {
+  string reason = 1;
+  optional int64 expiresAt = 2;
+}
+
+message CanJoinServerResponse {
+  // Whether the user can join the server
+  bool canJoin = 1;
+  // set when the server is full but the user can queue for it
+  optional bool canQueue = 2;
+  // ban info
+  optional BanInfo banInfo = 3;
+  // Why the join was denied
+  optional JoinDeniedReason deniedReason = 4;
+}
+
+message Server {
+  // The server id
+  string id = 1;
+  // The server name
+  string name = 2;
+  // The level and mode that the server is running
+  kyber_common.LevelSetup levelSetup = 3;
+  // The server creator
+  string creator = 4;
+  // The server creator's id
+  string creatorId = 5;
+  // Whether the server is officially hosted by Kyber
+  bool official = 6;
+  // Whether the server requires a password
+  bool requiresPassword = 7;
+  // The server's required mods
+  repeated kyber_common.ServerMod mods = 8;
+  // The current player count
+  uint32 playerCount = 9;
+  // The maximum player count
+  uint32 maxPlayerCount = 10;
+  // Whether this server requires a proxy to join
+  // If false, ip and port will be available
+  bool requiresProxy = 11;
+
+  // Reserved for Kyber proxies and official Kyber dedicated servers, not exposed in normal requests
+  optional string ip = 12;
+  optional uint32 port = 13;
+
+  // The server description
+  optional string description = 14;
+
+  // The server's metadata
+  map<string, string> meta = 15;
+
+  // The servers region (EU, US, etc)
+  optional string region = 16;
+
+  // The hash of a custom map image, used to display the map in the server browser
+  optional string mapImageHash = 17;
+}
+
+message ServerList {
+  // The current page
+  uint32 page = 1;
+  // The total pages
+  uint32 pages = 2;
+  // The list of servers
+  repeated Server servers = 3;
+}
+
+message CheckModImagesRequest {
+  repeated CheckModImageItem items = 1;
+}
+
+message CheckModImagesResponse {
+  // The hashes of the mod images that are available
+  repeated string hashes = 1;
+}
+
+message CheckModImageItem {
+  string hash = 1;
+  string level = 2;
+  string mode = 3;
+}
+
+message UploadModImagesRequest {
+  repeated ModImage images = 1;
+}
+
+message ModImage {
+  bytes image = 1;
+  string level = 2;
+  string mode = 3;
+  kyber_common.ServerMod mod = 4;
+}
+
+message RegisterServerResponse {
+  // The server id
+  string id = 1;
+  // The server name
+  string name = 2;
+  // The level and mode that the server is running
+  kyber_common.LevelSetup levelSetup = 3;
+  // The server creator
+  string creator = 4;
+  // The server creator's id
+  string creatorId = 5;
+  // Whether the server is officially hosted by Kyber
+  bool official = 6;
+  // Whether the server requires a password
+  bool requiresPassword = 7;
+  // The server's required mods
+  repeated kyber_common.ServerMod mods = 8;
+  // The current player count
+  uint32 playerCount = 9;
+  // The maximum player count
+  uint32 maxPlayerCount = 10;
+  // Whether this server requires a proxy to join
+  // If false, ip and port will be available
+  bool requiresProxy = 11;
+
+  // Reserved for Kyber proxies and official Kyber dedicated servers, not exposed in normal requests
+  optional string ip = 12;
+  optional uint32 port = 13;
+
+  // The server description
+  optional string description = 14;
+
+  // The server's metadata
+  map<string, string> meta = 15;
+
+  // The servers region (EU, US, etc)
+  optional string region = 16;
+
+  // The hash of a custom map image, used to display the map in the server browser
+  optional string mapImageHash = 17;
+
+  // A proxy token to connect to register the servers with Kyber proxies
+  string proxyToken = 18;
+}
+
+message RegisterServerRequest {
+  // The server name
+  string name = 1;
+  // The server password
+  optional string password = 2;
+  // The server level setup
+  kyber_common.LevelSetup levelSetup = 3;
+  // The server's required mods
+  repeated kyber_common.ServerMod mods = 4;
+  // Whether the server is dedicated
+  bool dedicated = 5;
+  // The max player count
+  uint32 maxPlayerCount = 6;
+  // The server's stats source
+  StatsSource statsSource = 7;
+  // The server's description
+  optional string description = 8;
+  // Optional server metadata. This currently
+  // requires an entitlement to set
+  map<string, string> meta = 9;
+  // Contains "normal" mods and all mods from collections
+  repeated kyber_common.ServerMod explodedMods = 10;
+  // Optional. Can be used to re-register a server with the same ID. Only allowed if the ID was originally created by the same user
+  optional string id = 11;
+}
+
+message UpdateServerRequest {
+  // The server ID
+  string id = 1;
+  // The server's level setup
+  kyber_common.LevelSetup levelSetup = 2;
+  // The server name
+  optional string name = 3;
+  // The server password
+  optional string password = 4;
+  // The server description
+  optional string description = 5;
+}
+
+// Voip
+
+message VoipLoginResponse {
+  // A vivox username
+  string username = 1;
+  // A display name
+  string displayName = 2;
+  // A vivox issuer
+  string issuer = 3;
+  // A vivox realm/domain
+  string domain = 4;
+  // A vivox access token for the login request
+  string token = 5;
+}
+
+message VoipJoinChannelRequest {
+  // The ID of the server to join
+  string server = 1;
+}
+
+message VoipJoinChannelResponse {
+  // A vivox channel URI for the server
+  string channel = 1;
+  // A vivox access token for the join request
+  string accessToken = 2;
+}
