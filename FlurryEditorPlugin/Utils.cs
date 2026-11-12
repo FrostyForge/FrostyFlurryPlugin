@@ -191,6 +191,29 @@ namespace Flurry.Editor
             }
             return sb.ToString();
         }
+
+        public static string ConvertToTitleCase(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return input;
+
+            // Convert the string to lowercase
+            input = input.ToLower();
+
+            // Capitalize the first letter of each word
+            string[] words = input.Split(' ');
+            for (int i = 0; i < words.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(words[i]))
+                {
+                    char[] letters = words[i].ToCharArray();
+                    letters[0] = char.ToUpper(letters[0]);
+                    words[i] = new string(letters);
+                }
+            }
+
+            return string.Join(" ", words);
+        }
     }
 
     public static class KyberSettings
@@ -206,6 +229,7 @@ namespace Flurry.Editor
         public static bool FrontendLaunch { get { return Config.Get("Kyber_FrontendLaunch", false, ConfigScope.Global); } set { Config.Add("Kyber_FrontendLaunch", value, ConfigScope.Global); } }
         public static bool Autostart { get { return Config.Get("Kyber_AutoStart", false, ConfigScope.Global); } set { Config.Add("Kyber_AutoStart", value, ConfigScope.Global); } }
         public static bool DebugMode { get { return Config.Get("Kyber_DebugMode", false, ConfigScope.Global); } set { Config.Add("Kyber_DebugMode", value, ConfigScope.Global); } }
+        public static int EnablePlugins { get { return Config.Get("Kyber_EnablePlugins", 0, ConfigScope.Global); } set { Config.Add("Kyber_EnablePlugins", value, ConfigScope.Global); } }
         public static string ModuleBranch { get { return Config.Get("Kyber_ModuleBranch", "stable", ConfigScope.Global); } set { Config.Add("Kyber_ModuleBranch", value, ConfigScope.Global); } }
         public static List<string> LaunchCommands
         {

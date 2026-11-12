@@ -27,29 +27,6 @@ namespace Flurry.Editor.Windows
             Loaded += ModSettingsWindow_Loaded;
         }
 
-        private string ConvertToTitleCase(string input)
-        {
-            if (string.IsNullOrEmpty(input))
-                return input;
-
-            // Convert the string to lowercase
-            input = input.ToLower();
-
-            // Capitalize the first letter of each word
-            string[] words = input.Split(' ');
-            for (int i = 0; i < words.Length; i++)
-            {
-                if (!string.IsNullOrEmpty(words[i]))
-                {
-                    char[] letters = words[i].ToCharArray();
-                    letters[0] = char.ToUpper(letters[0]);
-                    words[i] = new string(letters);
-                }
-            }
-
-            return string.Join(" ", words);
-        }
-
         private void RepopulateLevelComboBox(int oldPlayerCount)
         {
             string curLevel = levelComboBox.Text;
@@ -103,6 +80,12 @@ namespace Flurry.Editor.Windows
             debugModeComboBox.Items.Add("Disabled");
             debugModeComboBox.Items.Add("Enabled");
 
+            enablePluginsComboBox.Items.Add("Disabled");
+            enablePluginsComboBox.Items.Add("Compiled Only");
+            enablePluginsComboBox.Items.Add("Dev Only");
+            enablePluginsComboBox.Items.Add("Compiled + Dev");
+
+
             //Fill Gamemodes/Levels
             EbxAssetEntry modesEntry = App.AssetManager.GetEbxEntry("UI/Data/GameModes/GameModes");
             dynamic modesRoot = App.AssetManager.GetEbx(modesEntry).RootObject;
@@ -118,7 +101,7 @@ namespace Flurry.Editor.Windows
                 if (modeEntry != null)
                 {
                     dynamic modeRoot = App.AssetManager.GetEbx(modeEntry).RootObject;
-                    string modeName = $"{ConvertToTitleCase(modeRoot.AurebeshGameModeName)} \t[{modeRoot.GameModeId}]";
+                    string modeName = $"{FlurryEditorUtils.ConvertToTitleCase(modeRoot.AurebeshGameModeName)} \t[{modeRoot.GameModeId}]";
 
                     List<(string, string)> levelPairs = new List<(string, string)>();
                     foreach (PointerRef levelPr in modeRoot.Levels)
@@ -127,13 +110,13 @@ namespace Flurry.Editor.Windows
                         if (levEntry != null)
                         {
                             dynamic levRoot = App.AssetManager.GetEbx(levEntry).RootObject;
-                            string aurabesh = ConvertToTitleCase(levRoot.LevelAurebesh.Internal.String);
+                            string aurabesh = FlurryEditorUtils.ConvertToTitleCase(levRoot.LevelAurebesh.Internal.String);
                             if (aurabesh.StartsWith("Yavin") && aurabesh.EndsWith("4"))
                                 aurabesh = "Yavin IV";
                             else if (aurabesh == "Death Star Ii")
                                 aurabesh = "Death Star II";
 
-                            string levName = $"{aurabesh} - {ConvertToTitleCase(LocalizedStringDatabase.Current.GetString((uint)levRoot.LevelName.Internal.StringHash))}";
+                            string levName = $"{aurabesh} - {FlurryEditorUtils.ConvertToTitleCase(LocalizedStringDatabase.Current.GetString((uint)levRoot.LevelName.Internal.StringHash))}";
 
                             jsonSettings.LevelOverrides.Where(levelOverride => levelOverride.LevelId == levRoot.LevelId).ToList().ForEach(levelOverride => levName = levelOverride.Name);
                             levelPairs.Add((levRoot.LevelId, levName));
@@ -198,6 +181,7 @@ namespace Flurry.Editor.Windows
             frontendComboBox.SelectedIndex = KyberSettings.FrontendLaunch ? 1 : 0;
             autoStartComboBox.SelectedIndex = KyberSettings.Autostart ? 1 : 0;
             debugModeComboBox.SelectedIndex = KyberSettings.DebugMode ? 1 : 0;
+            enablePluginsComboBox.SelectedIndex = KyberSettings.EnablePlugins;
             teamIdComboBox.SelectedIndex = KyberSettings.TeamId;
             team1AutoplayerCountComboBox.SelectedIndex = KyberSettings.Team1Bots;
             team2AutoplayerCountComboBox.SelectedIndex = KyberSettings.Team2Bots;
@@ -232,6 +216,7 @@ namespace Flurry.Editor.Windows
             KyberSettings.Level = gameModesData[gamemodeComboBox.SelectedIndex].Item3[levelComboBox.SelectedIndex].Item1;
             KyberSettings.Autostart = (autoStartComboBox.Text == "Enabled");
             KyberSettings.DebugMode = (debugModeComboBox.Text == "Enabled");
+            KyberSettings.EnablePlugins = enablePluginsComboBox.SelectedIndex;
             KyberSettings.ModuleBranch = moduleBranchTextInput.Text;
             KyberSettings.TeamId = teamIdComboBox.SelectedIndex;
             KyberSettings.AutoplayerType = autoplayerTypeComboBox.Text;

@@ -48,19 +48,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyControls\FrostyControls.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyControls\FrostyControls.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyHash\FrostyHash.vcxproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyHash\FrostyHash.vcxproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyPlugin\FrostyCore.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyPlugin\FrostyCore.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostySdk\FrostySdk.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostySdk\FrostySdk.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Frosty\FrostyToolsuite\FrostyModManager\FrostyModManager.csproj">
+    <ProjectReference Include="..\..\FrostyToolsuite\FrostyModManager\FrostyModManager.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>

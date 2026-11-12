@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package mod_bridge;
+option go_package = "github.com/ArmchairDevelopers/Kyber/API/api/v1/pbmod;pbmod";
+
+service ModSearch {
+  rpc SearchMod (SearchModRequest) returns (SearchModResponse) {}
+  rpc SearchMods (SearchModsRequest) returns (SearchModsResponse) {}
+  rpc IndexMod (IndexModRequest) returns (Empty) {}
+  rpc GetMod (GetModRequest) returns (GetModResponse) {}
+}
+
+message Empty {}
+
+message CompleteMod {
+  int32 _id = 1;
+  int32 mod_id = 2;
+  repeated FileData mods = 3;
+  string name = 4;
+  int64 published = 5;
+  int64 created_at = 6;
+  int64 updated_at = 7;
+}
+
+message FileData {
+  string name = 1;
+  string version = 2;
+  string file = 3;
+  uint32 crc32 = 4;
+}
+
+message GetModRequest {
+  int32 mod_id = 1;
+  string token = 2;
+}
+
+message GetModResponse {
+  repeated CompleteMod mods = 1;
+}
+
+message IndexModRequest {
+  int64 mod_id = 1;
+  string token = 2;
+}
+
+message SearchModsRequest {
+  repeated BridgeMod mods = 1;
+}
+
+message SearchModsResponse {
+  repeated Mod mods = 1;
+  repeated BridgeMod not_found = 2;
+}
+
+message BridgeMod {
+  string name = 1;
+  string version = 2;
+  optional int64 file_hash = 3;
+  optional string id = 4;
+}
+
+message SearchModRequest {
+  string mod_name = 1;
+  string mod_version = 2;
+  optional int64 file_hash = 3;
+}
+
+message SearchModResponse {
+  Mod mod = 1;
+}
+
+message Mod {
+  string name = 1;
+  string link = 3;
+  int32 mod_id = 4;
+  int32 file_id = 5;
+  optional uint64 file_size = 6;
+  optional string id = 7;
+}

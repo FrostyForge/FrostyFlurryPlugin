@@ -28,6 +28,7 @@ using System.Windows.Media.Imaging;
 using System.Xml;
 using Formatting = Newtonsoft.Json.Formatting;
 using Flurry.Editor.Windows;
+using Flurry.Editor.KyberAPI;
 
 namespace Flurry.Editor.Patches
 {
@@ -322,9 +323,11 @@ namespace Flurry.Editor.Patches
                 //  Execute kyber_cli.exe
                 //
                 int randomNumber = random.Next();
+                Guid randGuid = Guid.NewGuid();
+                KyberServerManagementTabItem.SetTargetServerGuidName(randGuid.ToString());
                 string cliCommand = (KyberSettings.FrontendLaunch ? "start_game" : "start_server") + $" --module-branch={KyberSettings.ModuleBranch} --raw-mods \"{$@"{basePath}/Kyber-Launch.json"}\"" + (KyberSettings.DebugMode ? " --verbose --debug" : "");
                 if (!KyberSettings.FrontendLaunch)
-                    cliCommand += $" --server-password \"FlurryPlugin{randomNumber}\" --no-dedicated --server-name \"Test\" --map \"{KyberSettings.Level}\" --mode \"{KyberSettings.GameMode}\" --startup-commands \"{$@"{basePath}/Kyber-Commands.txt"}\"";
+                    cliCommand += $" --server-password \"FlurryPlugin{randomNumber}\" --no-dedicated --server-name \"{randGuid}\" --map \"{KyberSettings.Level}\" --mode \"{KyberSettings.GameMode}\" --startup-commands \"{$@"{basePath}/Kyber-Commands.txt"}\"";
                 App.Logger.Log(cliCommand);
 
                 ProcessStartInfo psi = new ProcessStartInfo(KyberSettings.CliDirectory);
@@ -336,6 +339,14 @@ namespace Flurry.Editor.Patches
                     psi.EnvironmentVariables["KYBER_PROPERTY_DEBUG"] = "1";
                     psi.EnvironmentVariables["KYBER_LOG_LEVEL"] = "debug";
                     psi.EnvironmentVariables["MAXIMA_LAUNCH_ARGS"] = "-Kyber.RenderPropertyDebug true";
+                }
+                if ((KyberSettings.EnablePlugins == 1 || KyberSettings.EnablePlugins == 3) && Directory.Exists($"{basePath}/ServerPlugins"))
+                {
+                    psi.EnvironmentVariables["KYBER_SERVER_PLUGINS_PATH"] = $"{basePath}/ServerPlugins";
+                }
+                if ((KyberSettings.EnablePlugins == 2 || KyberSettings.EnablePlugins == 3) && Directory.Exists($"{basePath}/DevPlugin"))
+                {
+                    psi.EnvironmentVariables["KYBER_DEV_PLUGIN_PATH"] = $"{basePath}/DevPlugin";
                 }
 
                 psi.Arguments = cliCommand;
@@ -502,6 +513,38 @@ namespace Flurry.Editor.Patches
                     }
                 };
                 bookmarksContextMenu.Items.Add(copyFilePathOption);
+            }
+            #endregion
+
+            #region Kyber Server manager tab - order and enable/disable
+            TabControl tabControl = __instance.MiscTabControl;
+            if (tabControl != null)
+            {
+                // Find the Kyber tab
+                TabItem kyberTab = null;
+                foreach (var item in tabControl.Items)
+                {
+                    if (item is TabItem tabItem && tabItem.Header.ToString() == "Kyber Server")
+                    {
+                        kyberTab = tabItem;
+                        break;
+                    }
+                }
+                if (kyberTab != null)
+                {
+                    // Move the Kyber tab to the end
+                    tabControl.Items.Remove(kyberTab);
+
+                    // Only add it back if enabled.
+                    if (config.KyberIntegration && ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII)
+                    {
+                        tabControl.Items.Add(kyberTab);
+                    }
+                }
+                else
+                {
+                    App.Logger.LogError("Could not find kyber server tabitem");
+                }
             }
             #endregion
         }
