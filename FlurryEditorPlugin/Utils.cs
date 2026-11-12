@@ -229,6 +229,7 @@ namespace Flurry.Editor
         public static bool FrontendLaunch { get { return Config.Get("Kyber_FrontendLaunch", false, ConfigScope.Global); } set { Config.Add("Kyber_FrontendLaunch", value, ConfigScope.Global); } }
         public static bool Autostart { get { return Config.Get("Kyber_AutoStart", false, ConfigScope.Global); } set { Config.Add("Kyber_AutoStart", value, ConfigScope.Global); } }
         public static bool DebugMode { get { return Config.Get("Kyber_DebugMode", false, ConfigScope.Global); } set { Config.Add("Kyber_DebugMode", value, ConfigScope.Global); } }
+        public static int EnablePlugins { get { return Config.Get("Kyber_EnablePlugins", 0, ConfigScope.Global); } set { Config.Add("Kyber_EnablePlugins", value, ConfigScope.Global); } }
         public static string ModuleBranch { get { return Config.Get("Kyber_ModuleBranch", "stable", ConfigScope.Global); } set { Config.Add("Kyber_ModuleBranch", value, ConfigScope.Global); } }
         public static List<string> LaunchCommands
         {

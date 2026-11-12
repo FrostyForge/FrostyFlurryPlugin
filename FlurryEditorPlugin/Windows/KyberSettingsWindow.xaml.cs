@@ -80,6 +80,12 @@ namespace Flurry.Editor.Windows
             debugModeComboBox.Items.Add("Disabled");
             debugModeComboBox.Items.Add("Enabled");
 
+            enablePluginsComboBox.Items.Add("Disabled");
+            enablePluginsComboBox.Items.Add("Compiled Only");
+            enablePluginsComboBox.Items.Add("Dev Only");
+            enablePluginsComboBox.Items.Add("Compiled + Dev");
+
+
             //Fill Gamemodes/Levels
             EbxAssetEntry modesEntry = App.AssetManager.GetEbxEntry("UI/Data/GameModes/GameModes");
             dynamic modesRoot = App.AssetManager.GetEbx(modesEntry).RootObject;
@@ -175,6 +181,7 @@ namespace Flurry.Editor.Windows
             frontendComboBox.SelectedIndex = KyberSettings.FrontendLaunch ? 1 : 0;
             autoStartComboBox.SelectedIndex = KyberSettings.Autostart ? 1 : 0;
             debugModeComboBox.SelectedIndex = KyberSettings.DebugMode ? 1 : 0;
+            enablePluginsComboBox.SelectedIndex = KyberSettings.EnablePlugins;
             teamIdComboBox.SelectedIndex = KyberSettings.TeamId;
             team1AutoplayerCountComboBox.SelectedIndex = KyberSettings.Team1Bots;
             team2AutoplayerCountComboBox.SelectedIndex = KyberSettings.Team2Bots;
@@ -209,6 +216,7 @@ namespace Flurry.Editor.Windows
             KyberSettings.Level = gameModesData[gamemodeComboBox.SelectedIndex].Item3[levelComboBox.SelectedIndex].Item1;
             KyberSettings.Autostart = (autoStartComboBox.Text == "Enabled");
             KyberSettings.DebugMode = (debugModeComboBox.Text == "Enabled");
+            KyberSettings.EnablePlugins = enablePluginsComboBox.SelectedIndex;
             KyberSettings.ModuleBranch = moduleBranchTextInput.Text;
             KyberSettings.TeamId = teamIdComboBox.SelectedIndex;
             KyberSettings.AutoplayerType = autoplayerTypeComboBox.Text;

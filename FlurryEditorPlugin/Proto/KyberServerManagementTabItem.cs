@@ -75,6 +75,8 @@ namespace Flurry.Editor.KyberAPI
         private ComboBox gamemodeComboBox;
         private ComboBox levelComboBox;
         private Button loadSelectedLevelButton;
+        private Button hotReloadServerLuaLevelButton;
+        private Button hotReloadClientLuaLevelButton;
         private List<(string, string, List<(string, string)>, int)> gameModesData = new List<(string, string, List<(string, string)>, int)>();
         #endregion
 
@@ -94,6 +96,8 @@ namespace Flurry.Editor.KyberAPI
             gamemodeComboBox = GetTemplateChild("gamemodeComboBox") as ComboBox;
             levelComboBox = GetTemplateChild("levelComboBox") as ComboBox;
             loadSelectedLevelButton = GetTemplateChild("loadSelectedLevelButton") as Button;
+            hotReloadServerLuaLevelButton = GetTemplateChild("hotReloadServerLuaLevelButton") as Button;
+            hotReloadClientLuaLevelButton = GetTemplateChild("hotReloadClientLuaLevelButton") as Button;
 
             #region Fill mode/level combo boxes
             //Fill Gamemodes/Levels
@@ -202,6 +206,15 @@ namespace Flurry.Editor.KyberAPI
                 ExecuteCommand2($"Kyber.LoadLevel {selectedLevelId} {selectedGameModeId}");
             };
 
+            hotReloadServerLuaLevelButton.Click += (sender, e) =>
+            { 
+                HotReloadLua("server");
+            };
+            hotReloadClientLuaLevelButton.Click += (sender, e) =>
+            {
+                HotReloadLua("client");
+            };
+
             gamemodeComboBox.SelectedIndex = gameModesData.Select(data => data.Item1).Contains(KyberSettings.GameMode) ? gameModesData.Select(data => data.Item1).ToList().IndexOf(KyberSettings.GameMode) : 0;
             RepopulateLevelComboBox();
             levelComboBox.SelectedIndex = gameModesData[gamemodeComboBox.SelectedIndex].Item3.Select(data => data.Item1).Contains(KyberSettings.Level) ? gameModesData[gamemodeComboBox.SelectedIndex].Item3.Select(data => data.Item1).ToList().IndexOf(KyberSettings.Level) : 0;
@@ -221,6 +234,11 @@ namespace Flurry.Editor.KyberAPI
             loggedInAs.Text = "Logged in as: " + loginResp.Name;
 
             RefreshIntervalTimer = new Timer(RefreshIntervalTimerCallback, null, 0, 8000);
+        }
+
+        private void HotReloadLua(string arena)
+        {
+            ExecuteCommand2($"Kyber.HotReloadLua {arena}");
         }
 
         private void RepopulateLevelComboBox()

@@ -47,14 +47,19 @@
                             <Label Content="KYBER Arguments " FontFamily="Global User Interface" Width="125"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="0.5*"/>
-                                    <ColumnDefinition Width="0.5*"/>
+                                    <ColumnDefinition Width="0.33*"/>
+                                    <ColumnDefinition Width="0.33*"/>
+                                    <ColumnDefinition Width="0.33*"/>
                                 </Grid.ColumnDefinitions>
                                 <DockPanel Grid.Column="0" LastChildFill="True">
                                     <Label Content="DebugMode " FontFamily="Global User Interface" Width="125"/>
                                     <ComboBox x:Name="debugModeComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1"/>
                                 </DockPanel>
                                 <DockPanel Grid.Column="1" LastChildFill="True">
+                                    <Label Content="Enable Plugins " FontFamily="Global User Interface" Width="125"/>
+                                    <ComboBox x:Name="enablePluginsComboBox" VerticalContentAlignment="Center" Margin="1" BorderThickness="1"/>
+                                </DockPanel>
+                                <DockPanel Grid.Column="2" LastChildFill="True">
                                     <Label Content="Module Branch " FontFamily="Global User Interface" Width="125"/>
                                     <TextBox x:Name="moduleBranchTextInput" VerticalContentAlignment="Center" Text="stable" Margin="1" BorderThickness="1" Width="125"/>
                                 </DockPanel>

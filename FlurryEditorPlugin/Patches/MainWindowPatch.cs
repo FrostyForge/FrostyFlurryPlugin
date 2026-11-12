@@ -340,6 +340,14 @@ namespace Flurry.Editor.Patches
                     psi.EnvironmentVariables["KYBER_LOG_LEVEL"] = "debug";
                     psi.EnvironmentVariables["MAXIMA_LAUNCH_ARGS"] = "-Kyber.RenderPropertyDebug true";
                 }
+                if ((KyberSettings.EnablePlugins == 1 || KyberSettings.EnablePlugins == 3) && Directory.Exists($"{basePath}/ServerPlugins"))
+                {
+                    psi.EnvironmentVariables["KYBER_SERVER_PLUGINS_PATH"] = $"{basePath}/ServerPlugins";
+                }
+                if ((KyberSettings.EnablePlugins == 2 || KyberSettings.EnablePlugins == 3) && Directory.Exists($"{basePath}/DevPlugin"))
+                {
+                    psi.EnvironmentVariables["KYBER_DEV_PLUGIN_PATH"] = $"{basePath}/DevPlugin";
+                }
 
                 psi.Arguments = cliCommand;
                 //psi.RedirectStandardInput = true;

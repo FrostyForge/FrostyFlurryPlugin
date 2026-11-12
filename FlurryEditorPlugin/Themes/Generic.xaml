@@ -107,6 +107,8 @@
                             </DockPanel>
                             <DockPanel Grid.Row="1" LastChildFill="False">
                                 <Button x:Name="loadSelectedLevelButton" Content="Load Level" Margin="1" />
+                                <Button x:Name="hotReloadServerLuaLevelButton" Content="Reload Dev Plugin (Server)" Margin="1" />
+                                <Button x:Name="hotReloadClientLuaLevelButton" Content="Reload Dev Plugin (Client)" Margin="1" />
                             </DockPanel>
                         </Grid>
                     </Grid>
